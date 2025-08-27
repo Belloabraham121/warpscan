@@ -1,0 +1,50 @@
+[package]
+name = "warpscan"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# TUI Framework
+ratatui = "0.28"
+crossterm = "0.27"
+
+# Blockchain Integration
+ethers = "2.0"
+tokio = { version = "1.0", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Caching and data structures
+lru = "0.12"
+
+# Async utilities
+futures = "0.3"
+tokio-stream = "0.1"
+
+# File system and path handling
+dirs = "5.0"
+
+# Cryptography for wallet functionality
+rand = "0.8"
+secp256k1 = "0.28"
+bip39 = "2.0"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Configuration
+config = "0.14"
+
+# Hex encoding/decoding
+hex = "0.4"

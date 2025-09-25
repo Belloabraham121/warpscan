@@ -48,3 +48,4 @@ config = "0.14"
 
 # Hex encoding/decoding
 hex = "0.4"
+funty = "2.0.0"

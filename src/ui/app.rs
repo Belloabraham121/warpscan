@@ -207,6 +207,13 @@ impl App {
         &self.input
     }
 
+    /// Process current input and clear it
+    pub fn process_input(&mut self) -> String {
+        let input = self.input.clone();
+        self.clear_input();
+        input
+    }
+
     /// Set input text
     pub fn set_input(&mut self, text: String) {
         self.input = text;

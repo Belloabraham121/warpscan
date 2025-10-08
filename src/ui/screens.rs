@@ -8,7 +8,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Tabs, Wrap},
     Frame,
 };
-use crate::ui::{app::App, theme::Theme};
+use crate::ui::{app::App, theme::Theme, components::render_daily_transactions_graph};
 
 /// Available screens in the application
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,11 +104,23 @@ pub fn render_home(frame: &mut Frame, app: &App, theme: &Theme) {
     // Network statistics
     render_network_stats(frame, main_chunks[2], app, theme);
 
+    // Split content area to include graph
+    let content_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(12), // Graph area
+            Constraint::Min(0),     // Blocks and transactions area
+        ])
+        .split(main_chunks[3]);
+
+    // Render daily transactions graph
+    render_daily_transactions_graph(frame, content_layout[0], theme, &app.dashboard_data.daily_transactions);
+
     // Content area with blocks and transactions
     let content_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(main_chunks[3]);
+        .split(content_layout[1]);
 
     render_latest_blocks(frame, content_chunks[0], app, theme);
     render_latest_transactions(frame, content_chunks[1], app, theme);

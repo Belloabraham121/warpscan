@@ -186,6 +186,15 @@ async fn handle_key_event(app: &mut App, key_code: KeyCode) -> Result<bool> {
 async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<bool> {
     match key_code {
         KeyCode::Char('q') => return Ok(true), // Quit
+        KeyCode::Esc => {
+            // Escape key - go back to previous screen or home
+            if app.state == AppState::Home {
+                // If already at home, quit the application
+                return Ok(true);
+            } else {
+                app.go_back();
+            }
+        }
         KeyCode::Char('h') => app.go_back(),
         KeyCode::Up => {
             match app.state {
@@ -307,7 +316,11 @@ async fn handle_editing_mode_keys(app: &mut App, key_code: KeyCode) -> Result<bo
     match key_code {
         KeyCode::Enter => {
             // Process input and exit editing mode
-            app.get_input();
+            let input_text = app.process_input();
+            if !input_text.is_empty() {
+                // Process the search input
+                process_search_input(app, &input_text).await?;
+            }
             app.input_mode = InputMode::Normal;
         }
         KeyCode::Esc => {
@@ -330,6 +343,34 @@ async fn handle_editing_mode_keys(app: &mut App, key_code: KeyCode) -> Result<bo
         _ => {}
     }
     Ok(false)
+}
+
+async fn process_search_input(app: &mut App, input: &str) -> Result<()> {
+    let trimmed_input = input.trim();
+    
+    // Determine what type of search this is based on the input format
+    if trimmed_input.len() == 66 && trimmed_input.starts_with("0x") {
+        // Transaction hash (64 hex chars + 0x prefix)
+        app.set_input(trimmed_input.to_string());
+        app.navigate_to(AppState::TransactionViewer);
+    } else if trimmed_input.len() == 42 && trimmed_input.starts_with("0x") {
+        // Ethereum address (40 hex chars + 0x prefix)
+        app.set_input(trimmed_input.to_string());
+        app.navigate_to(AppState::AddressLookup);
+    } else if trimmed_input.parse::<u64>().is_ok() {
+        // Block number
+        app.set_input(trimmed_input.to_string());
+        app.navigate_to(AppState::BlockExplorer);
+    } else if trimmed_input.starts_with("0x") && trimmed_input.len() <= 66 {
+        // Could be a block hash or partial hash
+        app.set_input(trimmed_input.to_string());
+        app.navigate_to(AppState::BlockExplorer);
+    } else {
+        // Unknown format, show error
+        app.set_error(format!("Unknown search format: {}", trimmed_input));
+    }
+    
+    Ok(())
 }
 
 async fn handle_mouse_event(app: &mut App, mouse_event: MouseEvent) -> Result<bool> {

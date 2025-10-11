@@ -1,56 +1,15 @@
-//! Caching system for WarpScan
+//! Cache manager implementation
 //!
-//! This module provides caching functionality for blockchain data
-//! to improve performance and reduce API calls.
+//! This module provides the main cache manager for storing and retrieving
+//! blockchain data with TTL support.
 
 use lru::LruCache;
-use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 use ethers::types::{Block, Transaction, H256};
-use crate::error::{ Result};
+use crate::error::Result;
 use crate::config::Config;
-
-/// Cache entry with timestamp for TTL management
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CacheEntry<T> {
-    pub data: T,
-    pub timestamp: u64,
-    pub ttl_seconds: u64,
-}
-
-/// Address information for caching
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AddressInfo {
-    pub address: String,
-    pub balance: String, // Using String to avoid U256 serialization issues
-    pub transaction_count: u64,
-    pub is_contract: bool,
-    pub last_updated: u64,
-}
-
-/// Contract information for caching
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContractInfo {
-    pub address: String,
-    pub name: Option<String>,
-    pub source_code: Option<String>,
-    pub abi: Option<String>,
-    pub compiler_version: Option<String>,
-    pub is_verified: bool,
-    pub last_updated: u64,
-}
-
-/// Token information for caching
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TokenInfo {
-    pub contract_address: String,
-    pub name: String,
-    pub symbol: String,
-    pub decimals: u8,
-    pub total_supply: Option<String>,
-    pub last_updated: u64,
-}
+use super::types::{CacheEntry, AddressInfo, ContractInfo, TokenInfo, CacheStats};
 
 /// Main cache manager
 #[derive(Clone)]
@@ -109,8 +68,11 @@ impl CacheManager {
         
         let entry = CacheEntry {
             data: block,
-            timestamp: chrono::Utc::now().timestamp() as u64,
-            ttl_seconds: self.config.cache.ttl_seconds,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            ttl_seconds: self.config.cache.block_ttl_seconds,
         };
         
         let mut cache = self.blocks.lock().unwrap();
@@ -142,8 +104,11 @@ impl CacheManager {
         
         let entry = CacheEntry {
             data: transaction,
-            timestamp: chrono::Utc::now().timestamp() as u64,
-            ttl_seconds: self.config.cache.ttl_seconds,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            ttl_seconds: self.config.cache.transaction_ttl_seconds,
         };
         
         let mut cache = self.transactions.lock().unwrap();
@@ -175,8 +140,11 @@ impl CacheManager {
         
         let entry = CacheEntry {
             data: info,
-            timestamp: chrono::Utc::now().timestamp() as u64,
-            ttl_seconds: self.config.cache.ttl_seconds,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            ttl_seconds: self.config.cache.address_ttl_seconds,
         };
         
         let mut cache = self.addresses.lock().unwrap();
@@ -208,8 +176,11 @@ impl CacheManager {
         
         let entry = CacheEntry {
             data: info,
-            timestamp: chrono::Utc::now().timestamp() as u64,
-            ttl_seconds: self.config.cache.ttl_seconds,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            ttl_seconds: self.config.cache.contract_ttl_seconds,
         };
         
         let mut cache = self.contracts.lock().unwrap();
@@ -218,7 +189,10 @@ impl CacheManager {
 
     /// Check if cache entry is expired
     fn is_expired<T>(&self, entry: &CacheEntry<T>) -> bool {
-        let now = chrono::Utc::now().timestamp() as u64;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         now > entry.timestamp + entry.ttl_seconds
     }
 
@@ -233,30 +207,19 @@ impl CacheManager {
 
     /// Get cache statistics
     pub fn get_stats(&self) -> CacheStats {
-        let blocks = self.blocks.lock().unwrap();
-        let transactions = self.transactions.lock().unwrap();
-        let addresses = self.addresses.lock().unwrap();
-        let contracts = self.contracts.lock().unwrap();
-        let tokens = self.tokens.lock().unwrap();
+        let blocks_count = self.blocks.lock().unwrap().len();
+        let transactions_count = self.transactions.lock().unwrap().len();
+        let addresses_count = self.addresses.lock().unwrap().len();
+        let contracts_count = self.contracts.lock().unwrap().len();
+        let tokens_count = self.tokens.lock().unwrap().len();
         
         CacheStats {
-            blocks_count: blocks.len(),
-            transactions_count: transactions.len(),
-            addresses_count: addresses.len(),
-            contracts_count: contracts.len(),
-            tokens_count: tokens.len(),
-            total_entries: blocks.len() + transactions.len() + addresses.len() + contracts.len() + tokens.len(),
+            blocks_count,
+            transactions_count,
+            addresses_count,
+            contracts_count,
+            tokens_count,
+            total_entries: blocks_count + transactions_count + addresses_count + contracts_count + tokens_count,
         }
     }
-}
-
-/// Cache statistics
-#[derive(Debug, Clone)]
-pub struct CacheStats {
-    pub blocks_count: usize,
-    pub transactions_count: usize,
-    pub addresses_count: usize,
-    pub contracts_count: usize,
-    pub tokens_count: usize,
-    pub total_entries: usize,
 }

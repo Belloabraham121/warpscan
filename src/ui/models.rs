@@ -157,6 +157,231 @@ impl Default for AddressInfo {
     }
 }
 
+/// Comprehensive address details for the address lookup screen
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddressDetails {
+    pub address: String,
+    pub address_type: AddressType,
+    pub balance: f64,
+    pub token_count: u32,
+    pub estimated_net_worth: f64,
+    pub total_transactions: u64,
+    pub outgoing_transfers: u64,
+    pub total_gas_used: u64,
+    pub contract_name: Option<String>,
+    pub contract_creator: Option<String>,
+    pub creation_tx_hash: Option<String>,
+    pub last_activity: u64,
+}
+
+/// Address type enumeration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AddressType {
+    EOA,           // Externally Owned Account (Wallet)
+    Contract,      // Smart Contract
+    Token,         // Token Contract
+    MultiSig,      // Multi-signature Wallet
+    Exchange,      // Exchange Address
+    Unknown,       // Unknown type
+}
+
+impl Default for AddressDetails {
+    fn default() -> Self {
+        Self {
+            address: "0x1234567890abcdef1234567890abcdef12345678".to_string(),
+            address_type: AddressType::EOA,
+            balance: 15.75,
+            token_count: 25,
+            estimated_net_worth: 18_450.50,
+            total_transactions: 1_234,
+            outgoing_transfers: 567,
+            total_gas_used: 2_500_000,
+            contract_name: None,
+            contract_creator: None,
+            creation_tx_hash: None,
+            last_activity: 1640995200,
+        }
+    }
+}
+
+/// Transaction details for address transaction history
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddressTransaction {
+    pub tx_hash: String,
+    pub tx_type: String,
+    pub method: String,
+    pub block: u64,
+    pub from: String,
+    pub to: String,
+    pub value: f64,
+    pub fee: f64,
+    pub timestamp: u64,
+    pub status: TransactionStatus,
+}
+
+impl Default for AddressTransaction {
+    fn default() -> Self {
+        Self {
+            tx_hash: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab".to_string(),
+            tx_type: "Transfer".to_string(),
+            method: "transfer".to_string(),
+            block: 21_234_567,
+            from: "0x1111111111111111111111111111111111111111".to_string(),
+            to: "0x2222222222222222222222222222222222222222".to_string(),
+            value: 1.5,
+            fee: 0.002,
+            timestamp: 1640995200,
+            status: TransactionStatus::Success,
+        }
+    }
+}
+
+/// Account history entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccountHistoryEntry {
+    pub age: String,
+    pub action: String,
+    pub from: String,
+    pub to: String,
+    pub timestamp: u64,
+    pub tx_hash: String,
+}
+
+impl Default for AccountHistoryEntry {
+    fn default() -> Self {
+        Self {
+            age: "2 days ago".to_string(),
+            action: "Received".to_string(),
+            from: "0x1111111111111111111111111111111111111111".to_string(),
+            to: "0x2222222222222222222222222222222222222222".to_string(),
+            timestamp: 1640995200,
+            tx_hash: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab".to_string(),
+        }
+    }
+}
+
+/// Token transfer entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenTransfer {
+    pub token_id: Option<String>,
+    pub txn_hash: String,
+    pub from: String,
+    pub to: String,
+    pub token_name: String,
+    pub token_symbol: String,
+    pub amount: f64,
+    pub timestamp: u64,
+}
+
+impl Default for TokenTransfer {
+    fn default() -> Self {
+        Self {
+            token_id: None,
+            txn_hash: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab".to_string(),
+            from: "0x1111111111111111111111111111111111111111".to_string(),
+            to: "0x2222222222222222222222222222222222222222".to_string(),
+            token_name: "Tether USD".to_string(),
+            token_symbol: "USDT".to_string(),
+            amount: 100.0,
+            timestamp: 1640995200,
+        }
+    }
+}
+
+/// Token information for tokens tab
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenInfo {
+    pub contract_address: String,
+    pub name: String,
+    pub symbol: String,
+    pub token_type: TokenType,
+    pub balance: f64,
+    pub value_usd: f64,
+    pub decimals: u8,
+}
+
+/// Token type enumeration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TokenType {
+    ERC20,
+    ERC721,  // NFT
+    ERC1155, // Multi-token
+    Other(String),
+}
+
+impl Default for TokenInfo {
+    fn default() -> Self {
+        Self {
+            contract_address: "0xdac17f958d2ee523a2206206994597c13d831ec7".to_string(),
+            name: "Tether USD".to_string(),
+            symbol: "USDT".to_string(),
+            token_type: TokenType::ERC20,
+            balance: 1000.0,
+            value_usd: 1000.0,
+            decimals: 6,
+        }
+    }
+}
+
+/// Internal transaction entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InternalTransaction {
+    pub parent_tx: String,
+    pub hash: String,
+    pub tx_type: String,
+    pub block: u64,
+    pub from: String,
+    pub to: String,
+    pub value_in: f64,
+    pub value_out: f64,
+    pub timestamp: u64,
+}
+
+impl Default for InternalTransaction {
+    fn default() -> Self {
+        Self {
+            parent_tx: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab".to_string(),
+            hash: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12".to_string(),
+            tx_type: "call".to_string(),
+            block: 21_234_567,
+            from: "0x1111111111111111111111111111111111111111".to_string(),
+            to: "0x2222222222222222222222222222222222222222".to_string(),
+            value_in: 0.0,
+            value_out: 1.5,
+            timestamp: 1640995200,
+        }
+    }
+}
+
+/// Complete address data containing all tabs information
+#[derive(Debug, Clone, Default)]
+pub struct CompleteAddressData {
+    pub details: AddressDetails,
+    pub transactions: Vec<AddressTransaction>,
+    pub account_history: Vec<AccountHistoryEntry>,
+    pub token_transfers: Vec<TokenTransfer>,
+    pub tokens: Vec<TokenInfo>,
+    pub internal_transactions: Vec<InternalTransaction>,
+    pub current_tab: AddressTab,
+}
+
+/// Address detail tabs
+#[derive(Debug, Clone, PartialEq)]
+pub enum AddressTab {
+    Details,
+    Transactions,
+    AccountHistory,
+    TokenTransfers,
+    Tokens,
+    InternalTxns,
+}
+
+impl Default for AddressTab {
+    fn default() -> Self {
+        AddressTab::Details
+    }
+}
+
 /// Generate mock data for development
 impl DashboardData {
     pub fn mock() -> Self {

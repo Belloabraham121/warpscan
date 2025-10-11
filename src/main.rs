@@ -240,6 +240,21 @@ async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<boo
                      app.current_tab = (app.current_tab + 1) % 3;
                      app.current_list_index = 0; // Reset selection when switching tabs
                  }
+                 AppState::AddressLookup => {
+                     // Switch between address tabs
+                     use warpscan::ui::models::AddressTab;
+                     if let Some(current_tab) = app.get_current_address_tab() {
+                         let next_tab = match current_tab {
+                             AddressTab::Details => AddressTab::Transactions,
+                             AddressTab::Transactions => AddressTab::AccountHistory,
+                             AddressTab::AccountHistory => AddressTab::TokenTransfers,
+                             AddressTab::TokenTransfers => AddressTab::Tokens,
+                             AddressTab::Tokens => AddressTab::InternalTxns,
+                             AddressTab::InternalTxns => AddressTab::Details,
+                         };
+                         app.switch_address_tab(next_tab);
+                     }
+                 }
                  _ => app.next_tab(),
              }
          }
@@ -249,6 +264,21 @@ async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<boo
                      // Switch between search bar, blocks list, and transactions list
                      app.current_tab = if app.current_tab == 0 { 2 } else { app.current_tab - 1 };
                      app.current_list_index = 0; // Reset selection when switching tabs
+                 }
+                 AppState::AddressLookup => {
+                     // Switch between address tabs in reverse
+                     use warpscan::ui::models::AddressTab;
+                     if let Some(current_tab) = app.get_current_address_tab() {
+                         let prev_tab = match current_tab {
+                             AddressTab::Details => AddressTab::InternalTxns,
+                             AddressTab::Transactions => AddressTab::Details,
+                             AddressTab::AccountHistory => AddressTab::Transactions,
+                             AddressTab::TokenTransfers => AddressTab::AccountHistory,
+                             AddressTab::Tokens => AddressTab::TokenTransfers,
+                             AddressTab::InternalTxns => AddressTab::Tokens,
+                         };
+                         app.switch_address_tab(prev_tab);
+                     }
                  }
                  _ => app.go_back(),
              }
@@ -355,6 +385,10 @@ async fn process_search_input(app: &mut App, input: &str) -> Result<()> {
         // Ethereum address (40 hex chars + 0x prefix)
         app.set_input(trimmed_input.to_string());
         app.navigate_to(AppState::AddressLookup);
+        // Trigger address lookup
+        if let Err(e) = app.lookup_address(trimmed_input).await {
+            app.set_error(format!("Failed to lookup address: {}", e));
+        }
     } else if trimmed_input.parse::<u64>().is_ok() {
         // Block number
         app.set_input(trimmed_input.to_string());

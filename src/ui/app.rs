@@ -27,7 +27,6 @@ pub enum AppState {
     MultisigWallet,
     EventMonitor,
     Help,
-    Settings,
     Quit,
 }
 
@@ -319,7 +318,6 @@ impl App {
             AppState::MultisigWallet => "Multi-Signature Wallet",
             AppState::EventMonitor => "Event Monitor",
             AppState::Help => "Help",
-            AppState::Settings => "Settings",
             AppState::Quit => "Quit",
         }
     }

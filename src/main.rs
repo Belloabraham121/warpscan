@@ -120,7 +120,6 @@ async fn run_app<B: ratatui::backend::Backend>(
                 AppState::AddressLookup => screens::render_address_lookup(frame, app, theme),
                 AppState::GasTracker => screens::render_gas_tracker(frame, app, theme),
                 AppState::WalletManager => screens::render_wallet_manager(frame, app, theme),
-                AppState::Settings => screens::render_settings(frame, app, theme),
                 _ => {
                     // For unimplemented screens, show a placeholder
                     let placeholder = ratatui::widgets::Paragraph::new("Screen not yet implemented")
@@ -305,7 +304,6 @@ async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<boo
         KeyCode::Char('a') => app.navigate_to(AppState::AddressLookup),
         KeyCode::Char('g') => app.navigate_to(AppState::GasTracker),
         KeyCode::Char('w') => app.navigate_to(AppState::WalletManager),
-        KeyCode::Char('c') => app.navigate_to(AppState::Settings),
         KeyCode::Char('0') => app.navigate_to(AppState::Home),
         _ => {}
     }
@@ -414,7 +412,7 @@ fn handle_home_click(app: &mut App, _x: u16, y: u16) {
     // This is a simplified implementation - in a real app you'd calculate based on actual layout
     if y >= 5 && y <= 18 { // Assuming menu items are in this range
         let item_index = (y - 5) as usize;
-        if item_index < 13 { // We have 13 menu items
+        if item_index < 12 { // We have 12 menu items
             app.current_list_index = item_index;
             // Simulate Enter key press to navigate
             match item_index {
@@ -429,8 +427,7 @@ fn handle_home_click(app: &mut App, _x: u16, y: u16) {
                 8 => app.navigate_to(AppState::WalletManager),
                 9 => app.navigate_to(AppState::MultisigWallet),
                 10 => app.navigate_to(AppState::EventMonitor),
-                11 => app.navigate_to(AppState::Settings),
-                12 => app.navigate_to(AppState::Help),
+                11 => app.navigate_to(AppState::Help),
                 _ => {}
             }
         }

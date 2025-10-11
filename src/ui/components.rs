@@ -6,12 +6,11 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     text::{Line, Span, Text},
     widgets::{
-        Block, Borders, Clear, Gauge, List, ListItem, Paragraph, Wrap, Sparkline,
+        Block, Borders, Clear, Gauge, List, ListItem, Paragraph, Wrap,
     },
     Frame,
 };
 use crate::ui::theme::Theme;
-use crate::ui::models::DailyTransactionData;
 
 /// Render a loading spinner
 pub fn render_loading(frame: &mut Frame, area: Rect, theme: &Theme, message: &str) {
@@ -234,81 +233,4 @@ pub fn render_status_bar(
 
     frame.render_widget(left_paragraph, chunks[0]);
     frame.render_widget(right_paragraph, chunks[1]);
-}
-
-/// Render daily transactions graph
-pub fn render_daily_transactions_graph(
-    frame: &mut Frame,
-    area: Rect,
-    theme: &Theme,
-    data: &[DailyTransactionData],
-) {
-    // Use all 31 days of data for full coverage
-    let values: Vec<u64> = data
-        .iter()
-        .map(|d| d.transaction_count)
-        .collect();
-
-    if values.is_empty() {
-        return;
-    }
-
-    // Create layout with title and chart area that fully covers the box
-    let chart_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3), // Title and stats area
-            Constraint::Min(0),    // Chart area (fills remaining space)
-        ])
-        .margin(0) // No margin to use full width
-        .split(area);
-
-    // Title and stats in the top area
-    let top_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // Title
-            Constraint::Length(1), // Stats
-        ])
-        .split(chart_layout[0]);
-
-    // Render title
-    let title = Paragraph::new("Daily Transactions (Last 31 Days)")
-        .style(theme.header())
-        .alignment(Alignment::Center);
-    frame.render_widget(title, top_layout[0]);
-
-    // Render stats in one line
-    let avg = values.iter().sum::<u64>() / values.len() as u64;
-    let max_val = values.iter().max().copied().unwrap_or(0);
-    let min_val = values.iter().min().copied().unwrap_or(0);
-
-    let stats_text = format!(
-        "Avg: {:.0}K  Max: {:.0}K  Min: {:.0}K",
-        avg as f64 / 1_000.0,
-        max_val as f64 / 1_000.0,
-        min_val as f64 / 1_000.0
-    );
-
-    let stats_paragraph = Paragraph::new(stats_text)
-        .style(theme.info())
-        .alignment(Alignment::Center);
-    frame.render_widget(stats_paragraph, top_layout[1]);
-
-    // Using left and right borders only (like the ratatui example)
-    // This maximizes chart width while maintaining visual separation
-    // Width = area.width - 2 (only for left and right borders, no top/bottom)
-    let sparkline = Sparkline::default()
-        .block(
-            Block::default()
-                .borders(Borders::LEFT | Borders::RIGHT)
-                .border_style(theme.border())
-                .title("Transaction Volume"),
-        )
-        .data(&values)
-        .style(theme.primary())
-        .max(max_val)
-        .direction(ratatui::widgets::RenderDirection::LeftToRight);
-    
-    frame.render_widget(sparkline, chart_layout[1]);
 }

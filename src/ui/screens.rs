@@ -8,7 +8,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Tabs, Wrap},
     Frame,
 };
-use crate::ui::{app::App, theme::Theme, components::render_daily_transactions_graph};
+use crate::ui::{app::App, theme::Theme};
 
 /// Available screens in the application
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,7 +25,6 @@ pub enum Screen {
     WalletManager,
     MultiSigWallet,
     EventMonitor,
-    Settings,
     Help,
 }
 
@@ -104,23 +103,11 @@ pub fn render_home(frame: &mut Frame, app: &App, theme: &Theme) {
     // Network statistics
     render_network_stats(frame, main_chunks[2], app, theme);
 
-    // Split content area to include graph
-    let content_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(12), // Graph area
-            Constraint::Min(0),     // Blocks and transactions area
-        ])
-        .split(main_chunks[3]);
-
-    // Render daily transactions graph
-    render_daily_transactions_graph(frame, content_layout[0], theme, &app.dashboard_data.daily_transactions);
-
-    // Content area with blocks and transactions
+    // Content area with blocks and transactions (no graph)
     let content_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(content_layout[1]);
+        .split(main_chunks[3]);
 
     render_latest_blocks(frame, content_chunks[0], app, theme);
     render_latest_transactions(frame, content_chunks[1], app, theme);
@@ -600,57 +587,4 @@ pub fn render_wallet_manager(frame: &mut Frame, app: &App, theme: &Theme) {
         .wrap(Wrap { trim: true });
 
     frame.render_widget(content_paragraph, chunks[2]);
-}
-
-/// Render the settings screen
-pub fn render_settings(frame: &mut Frame, app: &App, theme: &Theme) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(0)])
-        .split(frame.area());
-
-    // Title
-    let title = Paragraph::new("Settings")
-        .style(theme.title())
-        .alignment(Alignment::Center)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(theme.primary()),
-        );
-    frame.render_widget(title, chunks[0]);
-
-    // Settings options
-    let settings_items = vec![
-        "Network Configuration",
-        "Cache Settings",
-        "UI Theme",
-        "Gas Settings",
-        "Export Configuration",
-        "Reset to Defaults",
-    ];
-
-    let settings_list: Vec<ListItem> = settings_items
-        .iter()
-        .enumerate()
-        .map(|(i, item)| {
-            let style = if i == app.current_list_index {
-                theme.selected()
-            } else {
-                theme.normal()
-            };
-            ListItem::new(Line::from(*item)).style(style)
-        })
-        .collect();
-
-    let settings = List::new(settings_list)
-        .block(
-            Block::default()
-                .title("Configuration")
-                .borders(Borders::ALL)
-                .border_style(theme.border()),
-        )
-        .style(theme.normal());
-
-    frame.render_widget(settings, chunks[1]);
 }

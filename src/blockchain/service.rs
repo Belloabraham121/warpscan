@@ -1,41 +1,21 @@
-//! Blockchain service layer for WarpScan
-//!
-//! This module provides the interface for interacting with Ethereum blockchain
-//! using ethers.rs library.
+//! Blockchain service implementation
 
 use ethers::{
     providers::{Http, Middleware, Provider},
-    types::{Address, Block, Transaction, TransactionReceipt, H256, U256},
+    types::{Address, Block, Transaction, TransactionReceipt, H256, U256, TransactionRequest, transaction::eip2718::TypedTransaction},
 };
 use std::str::FromStr;
 use std::sync::Arc;
 use crate::cache::{CacheManager, AddressInfo};
 use crate::config::Config;
 use crate::error::{Error, Result};
+use super::types::GasPrices;
 
 /// Blockchain service for interacting with Ethereum
 pub struct BlockchainService {
     provider: Arc<Provider<Http>>,
     cache: Arc<CacheManager>,
     config: Config,
-}
-
-/// Gas price information
-#[derive(Debug, Clone)]
-pub struct GasPrices {
-    pub slow: U256,
-    pub standard: U256,
-    pub fast: U256,
-    pub timestamp: u64,
-}
-
-/// Transaction status
-#[derive(Debug, Clone)]
-pub enum TransactionStatus {
-    Pending,
-    Success,
-    Failed,
-    Unknown,
 }
 
 impl BlockchainService {
@@ -115,79 +95,67 @@ impl BlockchainService {
         }
         
         let hash = H256::from_str(tx_hash)
-            .map_err(|e| Error::parse(format!("Invalid transaction hash: {}", e)))?;
+            .map_err(|e| Error::validation(format!("Invalid transaction hash: {}", e)))?;
         
-        let transaction = self
+        let tx = self
             .provider
             .get_transaction(hash)
             .await
             .map_err(|e| Error::blockchain(format!("{}", e)))?;
         
         // Store in cache if found
-        if let Some(ref tx) = transaction {
+        if let Some(ref tx) = tx {
             self.cache.store_transaction(tx_hash.to_string(), tx.clone());
         }
         
-        Ok(transaction)
+        Ok(tx)
     }
 
     /// Get transaction receipt
     pub async fn get_transaction_receipt(&self, tx_hash: &str) -> Result<Option<TransactionReceipt>> {
         let hash = H256::from_str(tx_hash)
-            .map_err(|e| Error::parse(format!("Invalid transaction hash: {}", e)))?;
+            .map_err(|e| Error::validation(format!("Invalid transaction hash: {}", e)))?;
         
-        let receipt = self
-            .provider
+        self.provider
             .get_transaction_receipt(hash)
             .await
-            .map_err(|e| Error::blockchain(format!("{}", e)))?;
-        
-        Ok(receipt)
+            .map_err(|e| Error::blockchain(format!("{}", e)))
     }
 
     /// Get address balance
     pub async fn get_address_balance(&self, address: &str) -> Result<U256> {
         let addr = Address::from_str(address)
-            .map_err(|e| Error::parse(format!("Invalid address: {}", e)))?;
+            .map_err(|e| Error::validation(format!("Invalid address: {}", e)))?;
         
-        let balance = self
-            .provider
+        self.provider
             .get_balance(addr, None)
             .await
-            .map_err(|e| Error::blockchain(format!("{}", e)))?;
-        
-        Ok(balance)
+            .map_err(|e| Error::blockchain(format!("{}", e)))
     }
 
     /// Get address transaction count (nonce)
     pub async fn get_address_transaction_count(&self, address: &str) -> Result<U256> {
         let addr = Address::from_str(address)
-            .map_err(|e| Error::parse(format!("Invalid address: {}", e)))?;
+            .map_err(|e| Error::validation(format!("Invalid address: {}", e)))?;
         
-        let count = self
-            .provider
+        self.provider
             .get_transaction_count(addr, None)
             .await
-            .map_err(|e| Error::blockchain(format!("{}", e)))?;
-        
-        Ok(count)
+            .map_err(|e| Error::blockchain(format!("{}", e)))
     }
 
     /// Check if address is a contract
     pub async fn is_contract(&self, address: &str) -> Result<bool> {
         let addr = Address::from_str(address)
-            .map_err(|e| Error::parse(format!("Invalid address: {}", e)))?;
+            .map_err(|e| Error::validation(format!("Invalid address: {}", e)))?;
         
-        let code = self
-            .provider
-            .get_code(addr, None)
-            .await
+        let code = self.provider.get_code(addr, None).await
             .map_err(|e| Error::blockchain(format!("{}", e)))?;
         
         Ok(!code.is_empty())
     }
 
-    /// Get address information
+    /// Get comprehensive address information
     pub async fn get_address_info(&self, address: &str) -> Result<AddressInfo> {
         // Check cache first
         if let Some(cached_info) = self.cache.get_address_info(address) {
@@ -195,15 +163,18 @@ impl BlockchainService {
         }
         
         let balance = self.get_address_balance(address).await?;
-        let tx_count = self.get_address_transaction_count(address).await?;
+        let transaction_count = self.get_address_transaction_count(address).await?;
         let is_contract = self.is_contract(address).await?;
         
         let info = AddressInfo {
             address: address.to_string(),
             balance: balance.to_string(),
-            transaction_count: tx_count.as_u64(),
+            transaction_count: transaction_count.as_u64(),
             is_contract,
-            last_updated: chrono::Utc::now().timestamp() as u64,
+            last_updated: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
         };
         
         // Store in cache
@@ -214,45 +185,43 @@ impl BlockchainService {
 
     /// Get current gas prices
     pub async fn get_gas_prices(&self) -> Result<GasPrices> {
-        let gas_price = self
-            .provider
+        let gas_price = self.provider
             .get_gas_price()
             .await
             .map_err(|e| Error::blockchain(format!("{}", e)))?;
         
-        // Simple gas price estimation (in a real implementation, you might use more sophisticated methods)
-        let slow = gas_price * 80 / 100;  // 80% of current price
-        let standard = gas_price;         // Current price
-        let fast = gas_price * 120 / 100; // 120% of current price
+        // Simple gas price estimation (in a real implementation, you might use a gas oracle)
+        let slow = gas_price * 80 / 100;  // 80% of current
+        let standard = gas_price;
+        let fast = gas_price * 120 / 100; // 120% of current
         
         Ok(GasPrices {
             slow,
             standard,
             fast,
-            timestamp: chrono::Utc::now().timestamp() as u64,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
         })
     }
 
     /// Get current block number
     pub async fn get_block_number(&self) -> Result<u64> {
-        let block_number = self
-            .provider
+        self.provider
             .get_block_number()
             .await
-            .map_err(|e| Error::blockchain(format!("{}", e)))?;
-        
-        Ok(block_number.as_u64())
+            .map(|n| n.as_u64())
+            .map_err(|e| Error::blockchain(format!("{}", e)))
     }
 
     /// Get chain ID
     pub async fn get_chain_id(&self) -> Result<u64> {
-        let chain_id = self
-            .provider
+        self.provider
             .get_chainid()
             .await
-            .map_err(|e| Error::blockchain(format!("{}", e)))?;
-        
-        Ok(chain_id.as_u64())
+            .map(|n| n.as_u64())
+            .map_err(|e| Error::blockchain(format!("{}", e)))
     }
 
     /// Estimate gas for a transaction
@@ -264,41 +233,33 @@ impl BlockchainService {
         value: Option<U256>,
     ) -> Result<U256> {
         let from_addr = Address::from_str(from)
-            .map_err(|e| Error::parse(format!("Invalid from address: {}", e)))?;
+            .map_err(|e| Error::validation(format!("Invalid from address: {}", e)))?;
         let to_addr = Address::from_str(to)
-            .map_err(|e| Error::parse(format!("Invalid to address: {}", e)))?;
+            .map_err(|e| Error::validation(format!("Invalid to address: {}", e)))?;
         
-        let mut tx = ethers::types::TransactionRequest::new()
+        let mut tx = TransactionRequest::new()
             .from(from_addr)
             .to(to_addr);
         
-        if let Some(val) = value {
-            tx = tx.value(val);
-        }
-        
-        if let Some(data_str) = data {
-            let data_bytes = hex::decode(data_str.trim_start_matches("0x"))
-                .map_err(|e| Error::parse(format!("Invalid hex data: {}", e)))?;
+        if let Some(data) = data {
+            let data_bytes = hex::decode(data.trim_start_matches("0x"))
+                .map_err(|e| Error::validation(format!("Invalid data: {}", e)))?;
             tx = tx.data(data_bytes);
         }
         
-        let typed_tx: ethers::types::transaction::eip2718::TypedTransaction = tx.into();
-        let gas_estimate = self
-            .provider
+        if let Some(value) = value {
+            tx = tx.value(value);
+        }
+        
+        let typed_tx = TypedTransaction::Legacy(tx.into());
+        self.provider
             .estimate_gas(&typed_tx, None)
             .await
-            .map_err(|e| Error::blockchain(format!("{}", e)))?;
-        
-        Ok(gas_estimate)
+            .map_err(|e| Error::blockchain(format!("{}", e)))
     }
 
-    /// Get network name from chain ID
+    /// Get network name based on chain ID
     pub fn get_network_name(&self) -> String {
-        match self.config.network.chain_id {
-            1 => "Mainnet".to_string(),
-            5 => "Goerli".to_string(),
-            11155111 => "Sepolia".to_string(),
-            _ => format!("Chain {}", self.config.network.chain_id),
-        }
+        self.config.network.name.clone()
     }
 }

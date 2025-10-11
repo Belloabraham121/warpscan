@@ -10,9 +10,9 @@ pub mod models;
 pub mod screens;
 pub mod theme;
 
-pub use app::{App, AppState};
+pub use app::{App, AppState, InputMode};
 pub use events::{Event, EventHandler};
-pub use theme::Theme;
+pub use theme::{Theme, ThemeManager};
 
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},

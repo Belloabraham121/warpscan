@@ -6,6 +6,7 @@
 use std::path::PathBuf;
 use crate::error::{Error, Result};
 use super::types::{Config, NetworkConfig, CacheConfig, UiConfig, GasConfig};
+use dotenvy::dotenv;
 
 impl Default for Config {
     fn default() -> Self {
@@ -15,6 +16,7 @@ impl Default for Config {
                 rpc_url: "https://eth-sepolia.g.alchemy.com/v2/fvAedZJFIuaMcbNp1wSLQ".to_string(),
                 chain_id: 1,
                 timeout_seconds: 30,
+                node_type: Some("custom".to_string()),
             },
             cache: CacheConfig {
                 enabled: true,
@@ -35,6 +37,7 @@ impl Default for Config {
                 update_interval_seconds: 15,
                 history_days: 7,
             },
+            etherscan_api_key: std::env::var("ETHERSCAN_API_KEY").ok(),
         }
     }
 }
@@ -42,12 +45,18 @@ impl Default for Config {
 impl Config {
     /// Load configuration from file or create default
     pub fn load() -> Result<Self> {
+        // Load environment from .env if present
+        let _ = dotenv();
         let config_path = Self::config_path()?;
         
         if config_path.exists() {
             let config_str = std::fs::read_to_string(&config_path)?;
-            let config: Config = toml::from_str(&config_str)
+            let mut config: Config = toml::from_str(&config_str)
                 .map_err(|e| Error::parse(format!("Failed to parse config: {}", e)))?;
+            // Prefer environment variable over file value if present
+            if let Ok(key) = std::env::var("ETHERSCAN_API_KEY") {
+                config.etherscan_api_key = Some(key);
+            }
             Ok(config)
         } else {
             let default_config = Config::default();

@@ -41,6 +41,11 @@ impl Error {
         Error::Parse(msg.into())
     }
 
+    /// Create a serialization/deserialization error
+    pub fn serialization(err: serde_json::Error) -> Self {
+        Error::Serialization(err)
+    }
+
     /// Create an application error
     pub fn app<S: Into<String>>(msg: S) -> Self {
         Error::App(msg.into())

@@ -15,6 +15,8 @@ pub struct Config {
     pub ui: UiConfig,
     /// Gas tracking configuration
     pub gas: GasConfig,
+    /// Optional Etherscan API key (overrides env if set in file)
+    pub etherscan_api_key: Option<String>,
 }
 
 /// Network configuration
@@ -28,6 +30,8 @@ pub struct NetworkConfig {
     pub chain_id: u64,
     /// Request timeout in seconds
     pub timeout_seconds: u64,
+    /// Preferred node type (anvil, hardhat, infura, alchemy, custom)
+    pub node_type: Option<String>,
 }
 
 /// Cache configuration

@@ -1,7 +1,8 @@
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Tabs, Wrap},
+    style::{Modifier, Style},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Tabs, Table, Row, Cell, Wrap, TableState},
     Frame,
 };
 use crate::ui::{app::App, theme::Theme};
@@ -62,7 +63,13 @@ pub fn render_address_lookup(frame: &mut Frame, app: &App, theme: &Theme) {
                 render_address_details_tab(frame, content_chunks[2], &address_data.details, theme);
             }
             crate::ui::models::AddressTab::Transactions => {
-                render_address_transactions_tab(frame, content_chunks[2], &address_data.transactions, theme);
+                render_address_transactions_tab(
+                    frame,
+                    content_chunks[2],
+                    &address_data.transactions,
+                    address_data.selected_transaction_index,
+                    theme,
+                );
             }
             crate::ui::models::AddressTab::AccountHistory => {
                 render_address_history_tab(frame, content_chunks[2], &address_data.account_history, theme);
@@ -270,45 +277,84 @@ fn render_address_transactions_tab(
     frame: &mut Frame,
     area: ratatui::layout::Rect,
     transactions: &[crate::ui::models::AddressTransaction],
+    selected_index: usize,
     theme: &Theme,
 ) {
-    let items: Vec<ListItem> = transactions
-        .iter()
-        .map(|tx| {
-            let status_style = match tx.status {
-                crate::ui::models::TransactionStatus::Success => theme.success(),
-                crate::ui::models::TransactionStatus::Failed => theme.error(),
-                crate::ui::models::TransactionStatus::Pending => theme.warning(),
-            };
+    // Header
+    let header = Row::new(vec![
+        Cell::from(Span::styled("Transaction Hash", theme.label())),
+        Cell::from(Span::styled("Method", theme.label())),
+        Cell::from(Span::styled("Block", theme.label())),
+        Cell::from(Span::styled("Age", theme.label())),
+        Cell::from(Span::styled("From", theme.label())),
+        Cell::from(Span::styled("To", theme.label())),
+        Cell::from(Span::styled("Amount", theme.label())),
+    ]).style(Style::default().add_modifier(Modifier::BOLD));
 
-            ListItem::new(Line::from(vec![
-                Span::styled(format!("{:.10}...", tx.tx_hash), theme.normal()),
-                Span::raw(" | "),
-                Span::styled(&tx.tx_type, theme.label()),
-                Span::raw(" | "),
-                Span::styled(tx.block.to_string(), theme.normal()),
-                Span::raw(" | "),
-                Span::styled(format!("{:.8}...", tx.from), theme.normal()),
-                Span::raw(" → "),
-                Span::styled(format!("{:.8}...", tx.to), theme.normal()),
-                Span::raw(" | "),
-                Span::styled(format!("{:.4} ETH", tx.value), theme.warning()),
-                Span::raw(" | "),
-                Span::styled(format!("{:.6} ETH", tx.fee), status_style),
-            ]))
-        })
-        .collect();
+    // Rows
+    let rows = transactions.iter().map(|tx| {
+        let row_style = match tx.status {
+            crate::ui::models::TransactionStatus::Success => theme.success(),
+            crate::ui::models::TransactionStatus::Failed => theme.error(),
+            crate::ui::models::TransactionStatus::Pending => theme.warning(),
+        };
+        let age = chrono::DateTime::from_timestamp(tx.timestamp as i64, 0)
+            .map(|dt| {
+                let now = chrono::Utc::now();
+                let dur = now.signed_duration_since(dt);
+                if dur.num_days() > 0 { format!("{}d ago", dur.num_days()) }
+                else if dur.num_hours() > 0 { format!("{}h ago", dur.num_hours()) }
+                else if dur.num_minutes() > 0 { format!("{}m ago", dur.num_minutes()) }
+                else { format!("{}s ago", dur.num_seconds()) }
+            })
+            .unwrap_or_else(|| "—".to_string());
 
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .title("Transactions (Tx Hash | Type | Method | Block | Value | Fee)")
-                .borders(Borders::ALL)
-                .border_style(theme.border()),
-        )
-        .style(theme.normal());
+        // Simplify method to only the function name (e.g., "register" from "register(string,address)")
+        let method_display = if tx.method.is_empty() {
+            tx.tx_type.clone()
+        } else {
+            let m = tx.method.trim();
+            let name = m.split('(').next().unwrap_or(m);
+            name.to_string()
+        };
 
-    frame.render_widget(list, area);
+        Row::new(vec![
+            Cell::from(Span::styled(format!("{:.10}...", tx.tx_hash), theme.normal())),
+            Cell::from(Span::styled(method_display, theme.normal())),
+            Cell::from(Span::styled(tx.block.to_string(), theme.normal())),
+            Cell::from(Span::styled(age, theme.muted())),
+            Cell::from(Span::styled(format!("{:.10}...", tx.from), theme.normal())),
+            Cell::from(Span::styled(format!("{:.10}...", tx.to), theme.normal())),
+            Cell::from(Span::styled(format!("{:.4} ETH", tx.value), theme.warning())),
+        ]).style(row_style)
+    });
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(18), // hash
+            Constraint::Length(14), // method
+            Constraint::Length(10), // block
+            Constraint::Length(10), // age
+            Constraint::Percentage(20), // from
+            Constraint::Percentage(20), // to
+            Constraint::Length(14), // amount
+        ],
+    )
+    .header(header)
+    .block(
+        Block::default()
+            .title("Transactions")
+            .borders(Borders::ALL)
+            .border_style(theme.border()),
+    )
+    .column_spacing(1)
+    .highlight_style(theme.selected());
+
+    let mut state = TableState::default();
+    // Select current row
+    state.select(Some(selected_index));
+    frame.render_stateful_widget(table, area, &mut state);
 }
 
 /// Render the Account History tab

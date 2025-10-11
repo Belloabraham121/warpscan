@@ -210,6 +210,14 @@ async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<boo
                         }
                     }
                 }
+                AppState::AddressLookup => {
+                    use warpscan::ui::models::AddressTab;
+                    if let Some(AddressTab::Transactions) = app.get_current_address_tab() {
+                        app.address_select_previous_transaction();
+                    } else {
+                        app.previous_item();
+                    }
+                }
                 _ => app.previous_item(),
             }
         }
@@ -228,6 +236,14 @@ async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<boo
                         if app.current_list_index < max_index {
                             app.current_list_index += 1;
                         }
+                    }
+                }
+                AppState::AddressLookup => {
+                    use warpscan::ui::models::AddressTab;
+                    if let Some(AddressTab::Transactions) = app.get_current_address_tab() {
+                        app.address_select_next_transaction();
+                    } else {
+                        app.next_item();
                     }
                 }
                 _ => app.next_item(),

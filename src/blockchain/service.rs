@@ -10,6 +10,7 @@ use crate::cache::{CacheManager, AddressInfo};
 use crate::config::Config;
 use crate::error::{Error, Result};
 use super::types::GasPrices;
+use super::types::AddressTx;
 use super::etherscan::{EtherscanClient, EtherscanChain};
 
 /// Blockchain service for interacting with Ethereum
@@ -210,6 +211,22 @@ impl BlockchainService {
         self.cache.store_address_info(address.to_string(), info.clone());
         
         Ok(info)
+    }
+
+    /// Get address transactions (normal transactions)
+    pub async fn get_address_transactions(&self, address: &str) -> Result<Vec<AddressTx>> {
+        // Prefer Etherscan V2 when configured
+        if let Some(ref client) = self.etherscan {
+            match client.get_address_transactions(address).await {
+                Ok(txs) => return Ok(txs),
+                Err(err) => {
+                    tracing::warn!(target = "warpscan", "Etherscan failed for txlist: {}. Returning empty list.", err);
+                    return Ok(vec![]);
+                }
+            }
+        }
+        // Fallback: provider doesn’t offer per-address tx listing easily; return empty for now
+        Ok(vec![])
     }
 
     /// Get current gas prices

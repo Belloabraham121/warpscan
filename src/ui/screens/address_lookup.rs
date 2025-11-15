@@ -1,9 +1,12 @@
 use crate::ui::{app::App, theme::Theme};
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout, Margin},
     style::{Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState, Tabs, Wrap},
+    widgets::{
+        Block, BorderType, Borders, Cell, Paragraph, Row, Scrollbar, ScrollbarOrientation,
+        ScrollbarState, Table, TableState, Tabs, Wrap,
+    },
     Frame,
 };
 
@@ -90,13 +93,20 @@ pub fn render_address_lookup(frame: &mut Frame, app: &App, theme: &Theme) {
                 );
             }
             crate::ui::models::AddressTab::Tokens => {
-                render_tokens_tab(frame, content_chunks[2], &address_data.tokens, theme);
+                render_tokens_tab(
+                    frame,
+                    content_chunks[2],
+                    &address_data.tokens,
+                    address_data.selected_token_index,
+                    theme,
+                );
             }
             crate::ui::models::AddressTab::InternalTxns => {
                 render_internal_txns_tab(
                     frame,
                     content_chunks[2],
                     &address_data.internal_transactions,
+                    address_data.selected_internal_txn_index,
                     theme,
                 );
             }
@@ -132,7 +142,7 @@ fn render_address_type_indicator(
     use crate::ui::models::AddressType;
 
     let (type_text, type_style) = match details.address_type {
-        AddressType::EOA => ("EOA (Wallet)", theme.success()),
+        AddressType::EOA => ("Wallet", theme.success()),
         AddressType::Contract => ("Contract", theme.warning()),
         AddressType::Token => ("Token Contract", theme.primary()),
         AddressType::MultiSig => ("Multi-Sig Wallet", theme.info()),
@@ -140,20 +150,25 @@ fn render_address_type_indicator(
         AddressType::Unknown => ("Unknown", theme.muted()),
     };
 
-    let indicator_text = if let Some(name) = &details.contract_name {
-        format!("{} - {}", type_text, name)
-    } else {
-        type_text.to_string()
-    };
-
-    let indicator = Paragraph::new(Line::from(vec![
+    // Build the indicator line with type, address, and optionally ENS name
+    let mut spans = vec![
         Span::styled("Type: ", theme.label()),
-        Span::styled(indicator_text, type_style),
+        Span::styled(type_text, type_style),
         Span::raw(" | "),
         Span::styled("Address: ", theme.label()),
         Span::styled(&details.address, theme.normal()),
-    ]))
-    .block(
+    ];
+
+    // Add ENS name for EOA addresses if it exists
+    if let AddressType::EOA = details.address_type {
+        if let Some(ens_name) = &details.ens_name {
+            spans.push(Span::raw(" | "));
+            spans.push(Span::styled("ENS: ", theme.label()));
+            spans.push(Span::styled(ens_name, theme.primary()));
+        }
+    }
+
+    let indicator = Paragraph::new(Line::from(spans)).block(
         Block::default()
             .borders(Borders::ALL)
             .border_style(theme.border()),
@@ -340,6 +355,22 @@ fn render_address_transactions_tab(
     ])
     .style(Style::default().add_modifier(Modifier::BOLD));
 
+    // Show empty state if no transactions
+    if transactions.is_empty() {
+        let empty_message = Paragraph::new("No transactions found")
+            .style(theme.muted())
+            .alignment(Alignment::Center)
+            .block(
+                Block::default()
+                    .title("Transactions")
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Double)
+                    .border_style(theme.border()),
+            );
+        frame.render_widget(empty_message, area);
+        return;
+    }
+
     // Rows
     let rows: Vec<Row> = transactions
         .iter()
@@ -427,14 +458,32 @@ fn render_address_transactions_tab(
         Block::default()
             .title("Transactions (Press Enter on row to view details, click addresses to navigate)")
             .borders(Borders::ALL)
+            .border_type(BorderType::Double)
             .border_style(theme.border()),
     )
     .column_spacing(1)
-    .highlight_style(theme.selected());
+    .highlight_style(theme.selected())
+    .highlight_symbol(" █ ");
 
     let mut state = TableState::default();
     state.select(Some(selected_index));
     frame.render_stateful_widget(table, area, &mut state);
+
+    // Render scrollbar
+    let scrollbar = Scrollbar::default()
+        .orientation(ScrollbarOrientation::VerticalRight)
+        .begin_symbol(None)
+        .end_symbol(None);
+    let mut scrollbar_state =
+        ScrollbarState::new(transactions.len().saturating_sub(1)).position(selected_index);
+    frame.render_stateful_widget(
+        scrollbar,
+        area.inner(Margin {
+            vertical: 1,
+            horizontal: 1,
+        }),
+        &mut scrollbar_state,
+    );
 }
 
 /// Render the Account History tab
@@ -445,6 +494,22 @@ fn render_address_history_tab(
     selected_index: usize,
     theme: &Theme,
 ) {
+    // Show empty state if no history
+    if history.is_empty() {
+        let empty_message = Paragraph::new("No account history found")
+            .style(theme.muted())
+            .alignment(Alignment::Center)
+            .block(
+                Block::default()
+                    .title("Account History")
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Double)
+                    .border_style(theme.border()),
+            );
+        frame.render_widget(empty_message, area);
+        return;
+    }
+
     let header = Row::new(vec![
         Cell::from(Span::styled(
             "Age",
@@ -477,7 +542,8 @@ fn render_address_history_tab(
             let row_style = if is_selected {
                 theme.selected()
             } else {
-                theme.normal()
+                // Remove background color - just use foreground color
+                Style::default().fg(theme.foreground)
             };
 
             let address_style = if is_selected {
@@ -524,14 +590,32 @@ fn render_address_history_tab(
         Block::default()
             .title("Account History (Press Enter on row to view transaction, click addresses to navigate)")
             .borders(Borders::ALL)
+            .border_type(BorderType::Double)
             .border_style(theme.border()),
     )
     .column_spacing(1)
-    .highlight_style(theme.selected());
+    .highlight_style(theme.selected())
+    .highlight_symbol(" █ ");
 
     let mut state = TableState::default();
     state.select(Some(selected_index));
     frame.render_stateful_widget(table, area, &mut state);
+
+    // Render scrollbar
+    let scrollbar = Scrollbar::default()
+        .orientation(ScrollbarOrientation::VerticalRight)
+        .begin_symbol(None)
+        .end_symbol(None);
+    let mut scrollbar_state =
+        ScrollbarState::new(history.len().saturating_sub(1)).position(selected_index);
+    frame.render_stateful_widget(
+        scrollbar,
+        area.inner(Margin {
+            vertical: 1,
+            horizontal: 1,
+        }),
+        &mut scrollbar_state,
+    );
 }
 
 /// Render the Token Transfers tab
@@ -542,6 +626,22 @@ fn render_token_transfers_tab(
     selected_index: usize,
     theme: &Theme,
 ) {
+    // Show empty state if no transfers
+    if transfers.is_empty() {
+        let empty_message = Paragraph::new("No token transfers found")
+            .style(theme.muted())
+            .alignment(Alignment::Center)
+            .block(
+                Block::default()
+                    .title("Token Transfers")
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Double)
+                    .border_style(theme.border()),
+            );
+        frame.render_widget(empty_message, area);
+        return;
+    }
+
     let header = Row::new(vec![
         Cell::from(Span::styled(
             "Token ID",
@@ -578,7 +678,8 @@ fn render_token_transfers_tab(
             let row_style = if is_selected {
                 theme.selected()
             } else {
-                theme.normal()
+                // Remove background color - just use foreground color
+                Style::default().fg(theme.foreground)
             };
 
             let token_id_text = transfer
@@ -639,14 +740,32 @@ fn render_token_transfers_tab(
         Block::default()
             .title("Token Transfers (Press Enter on row to view transaction, click addresses to navigate)")
             .borders(Borders::ALL)
+            .border_type(BorderType::Double)
             .border_style(theme.border()),
     )
     .column_spacing(1)
-    .highlight_style(theme.selected());
+    .highlight_style(theme.selected())
+    .highlight_symbol(" █ ");
 
     let mut state = TableState::default();
     state.select(Some(selected_index));
     frame.render_stateful_widget(table, area, &mut state);
+
+    // Render scrollbar
+    let scrollbar = Scrollbar::default()
+        .orientation(ScrollbarOrientation::VerticalRight)
+        .begin_symbol(None)
+        .end_symbol(None);
+    let mut scrollbar_state =
+        ScrollbarState::new(transfers.len().saturating_sub(1)).position(selected_index);
+    frame.render_stateful_widget(
+        scrollbar,
+        area.inner(Margin {
+            vertical: 1,
+            horizontal: 1,
+        }),
+        &mut scrollbar_state,
+    );
 }
 
 /// Render the Tokens tab
@@ -654,8 +773,25 @@ fn render_tokens_tab(
     frame: &mut Frame,
     area: ratatui::layout::Rect,
     tokens: &[crate::ui::models::TokenInfo],
+    selected_index: usize,
     theme: &Theme,
 ) {
+    // Show empty state if no tokens
+    if tokens.is_empty() {
+        let empty_message = Paragraph::new("No tokens found")
+            .style(theme.muted())
+            .alignment(Alignment::Center)
+            .block(
+                Block::default()
+                    .title("Tokens")
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Double)
+                    .border_style(theme.border()),
+            );
+        frame.render_widget(empty_message, area);
+        return;
+    }
+
     let header = Row::new(vec![
         Cell::from(Span::styled(
             "Symbol",
@@ -686,7 +822,16 @@ fn render_tokens_tab(
 
     let rows: Vec<Row> = tokens
         .iter()
-        .map(|token| {
+        .enumerate()
+        .map(|(idx, token)| {
+            let is_selected = idx == selected_index;
+            let row_style = if is_selected {
+                theme.selected()
+            } else {
+                // Remove background color - just use foreground color
+                Style::default().fg(theme.foreground)
+            };
+
             let token_type_text = match &token.token_type {
                 crate::ui::models::TokenType::ERC20 => "ERC-20",
                 crate::ui::models::TokenType::ERC721 => "ERC-721 (NFT)",
@@ -694,25 +839,54 @@ fn render_tokens_tab(
                 crate::ui::models::TokenType::Other(name) => name,
             };
 
-            let address_style = theme.info().add_modifier(Modifier::UNDERLINED);
+            let address_style = if is_selected {
+                theme.selected()
+            } else {
+                theme.info().add_modifier(Modifier::UNDERLINED)
+            };
+
+            // Use different colors for different columns to make it less bland
+            let symbol_style = if is_selected {
+                theme.selected()
+            } else {
+                theme.primary()
+            };
+            let name_style = if is_selected {
+                theme.selected()
+            } else {
+                Style::default().fg(theme.foreground)
+            };
+            let type_style = if is_selected {
+                theme.selected()
+            } else {
+                theme.label()
+            };
+            let balance_style = if is_selected {
+                theme.selected()
+            } else {
+                theme.warning()
+            };
+            let value_style = if is_selected {
+                theme.selected()
+            } else {
+                theme.success()
+            };
 
             Row::new(vec![
-                Cell::from(Span::styled(&token.symbol, theme.primary())),
-                Cell::from(Span::styled(&token.name, theme.normal())),
-                Cell::from(Span::styled(token_type_text, theme.label())),
+                Cell::from(Span::styled(&token.symbol, symbol_style)),
+                Cell::from(Span::styled(&token.name, name_style)),
+                Cell::from(Span::styled(token_type_text, type_style)),
                 Cell::from(Span::styled(
                     format!("{:.10}...", token.contract_address),
                     address_style,
                 )),
-                Cell::from(Span::styled(
-                    format!("{:.4}", token.balance),
-                    theme.warning(),
-                )),
+                Cell::from(Span::styled(format!("{:.4}", token.balance), balance_style)),
                 Cell::from(Span::styled(
                     format!("${:.2}", token.value_usd),
-                    theme.success(),
+                    value_style,
                 )),
             ])
+            .style(row_style)
         })
         .collect();
 
@@ -732,11 +906,32 @@ fn render_tokens_tab(
         Block::default()
             .title("Tokens (Click contract address to view details)")
             .borders(Borders::ALL)
+            .border_type(BorderType::Double)
             .border_style(theme.border()),
     )
-    .column_spacing(1);
+    .column_spacing(1)
+    .highlight_style(theme.selected())
+    .highlight_symbol(" █ ");
 
-    frame.render_widget(table, area);
+    let mut state = TableState::default();
+    state.select(Some(selected_index));
+    frame.render_stateful_widget(table, area, &mut state);
+
+    // Render scrollbar
+    let scrollbar = Scrollbar::default()
+        .orientation(ScrollbarOrientation::VerticalRight)
+        .begin_symbol(None)
+        .end_symbol(None);
+    let mut scrollbar_state =
+        ScrollbarState::new(tokens.len().saturating_sub(1)).position(selected_index);
+    frame.render_stateful_widget(
+        scrollbar,
+        area.inner(Margin {
+            vertical: 1,
+            horizontal: 1,
+        }),
+        &mut scrollbar_state,
+    );
 }
 
 /// Render the Internal Transactions tab
@@ -744,8 +939,25 @@ fn render_internal_txns_tab(
     frame: &mut Frame,
     area: ratatui::layout::Rect,
     internal_txns: &[crate::ui::models::InternalTransaction],
+    selected_index: usize,
     theme: &Theme,
 ) {
+    // Show empty state if no internal transactions
+    if internal_txns.is_empty() {
+        let empty_message = Paragraph::new("No internal transactions found")
+            .style(theme.muted())
+            .alignment(Alignment::Center)
+            .block(
+                Block::default()
+                    .title("Internal Transactions")
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Double)
+                    .border_style(theme.border()),
+            );
+        frame.render_widget(empty_message, area);
+        return;
+    }
+
     let header = Row::new(vec![
         Cell::from(Span::styled(
             "Parent Tx",
@@ -776,24 +988,40 @@ fn render_internal_txns_tab(
 
     let rows: Vec<Row> = internal_txns
         .iter()
-        .map(|tx| {
-            let address_style = theme.info().add_modifier(Modifier::UNDERLINED);
-            let hash_style = theme.primary().add_modifier(Modifier::UNDERLINED);
+        .enumerate()
+        .map(|(idx, tx)| {
+            let is_selected = idx == selected_index;
+            let row_style = if is_selected {
+                theme.selected()
+            } else {
+                // Remove background color - just use foreground color
+                Style::default().fg(theme.foreground)
+            };
+
+            let address_style = if is_selected {
+                theme.selected()
+            } else {
+                theme.info().add_modifier(Modifier::UNDERLINED)
+            };
+
+            let hash_style = if is_selected {
+                theme.selected()
+            } else {
+                theme.primary().add_modifier(Modifier::UNDERLINED)
+            };
 
             Row::new(vec![
                 Cell::from(Span::styled(
                     format!("{:.10}...", tx.parent_tx_hash),
                     hash_style,
                 )),
-                Cell::from(Span::styled(&tx.tx_type, theme.label())),
-                Cell::from(Span::styled(tx.block.to_string(), theme.normal())),
+                Cell::from(Span::styled(&tx.tx_type, row_style)),
+                Cell::from(Span::styled(tx.block.to_string(), row_style)),
                 Cell::from(Span::styled(format!("{:.10}...", tx.from), address_style)),
                 Cell::from(Span::styled(format!("{:.10}...", tx.to), address_style)),
-                Cell::from(Span::styled(
-                    format!("{:.4} ETH", tx.value),
-                    theme.warning(),
-                )),
+                Cell::from(Span::styled(format!("{:.4} ETH", tx.value), row_style)),
             ])
+            .style(row_style)
         })
         .collect();
 
@@ -813,9 +1041,30 @@ fn render_internal_txns_tab(
         Block::default()
             .title("Internal Transactions (Click addresses or transactions to navigate)")
             .borders(Borders::ALL)
+            .border_type(BorderType::Double)
             .border_style(theme.border()),
     )
-    .column_spacing(1);
+    .column_spacing(1)
+    .highlight_style(theme.selected())
+    .highlight_symbol(" █ ");
 
-    frame.render_widget(table, area);
+    let mut state = TableState::default();
+    state.select(Some(selected_index));
+    frame.render_stateful_widget(table, area, &mut state);
+
+    // Render scrollbar
+    let scrollbar = Scrollbar::default()
+        .orientation(ScrollbarOrientation::VerticalRight)
+        .begin_symbol(None)
+        .end_symbol(None);
+    let mut scrollbar_state =
+        ScrollbarState::new(internal_txns.len().saturating_sub(1)).position(selected_index);
+    frame.render_stateful_widget(
+        scrollbar,
+        area.inner(Margin {
+            vertical: 1,
+            horizontal: 1,
+        }),
+        &mut scrollbar_state,
+    );
 }

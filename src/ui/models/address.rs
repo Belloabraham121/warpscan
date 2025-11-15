@@ -38,6 +38,7 @@ pub struct AddressDetails {
     pub contract_creator: Option<String>,
     pub creation_tx_hash: Option<String>,
     pub last_activity: u64,
+    pub ens_name: Option<String>, // ENS name for EOA addresses
 }
 
 /// Address type enumeration
@@ -66,6 +67,7 @@ impl Default for AddressDetails {
             contract_creator: None,
             creation_tx_hash: None,
             last_activity: 1640995200,
+            ens_name: None,
         }
     }
 }

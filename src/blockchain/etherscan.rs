@@ -450,6 +450,28 @@ impl EtherscanClient {
         Ok(internal_txns)
     }
 
+    /// Get token transfers for a specific transaction hash
+    /// This gets transfers from both from and to addresses and filters by tx_hash
+    pub async fn get_transaction_token_transfers(
+        &self,
+        _tx_hash: &str,
+    ) -> Result<Vec<TokenTransfer>> {
+        // Get transfers from the transaction's from address and filter by tx_hash
+        // We'll need to get the transaction first to know the addresses
+        // For now, return empty - will be populated in service layer
+        Ok(vec![])
+    }
+
+    /// Get internal transactions for a specific transaction hash
+    pub async fn get_transaction_internal_transactions(
+        &self,
+        _tx_hash: &str,
+    ) -> Result<Vec<InternalTransaction>> {
+        // Get internal transactions from the transaction's from address and filter by parent_tx_hash
+        // For now, return empty - will be populated in service layer
+        Ok(vec![])
+    }
+
     /// Get token balances for an address via Etherscan V2
     pub async fn get_token_balances(&self, address: &str) -> Result<Vec<TokenBalance>> {
         let url = self.base_url();
@@ -525,5 +547,264 @@ impl EtherscanClient {
             .collect();
 
         Ok(tokens)
+    }
+}
+
+/// Transaction details from Etherscan API
+#[derive(Debug, Clone)]
+pub struct EtherscanTransactionDetails {
+    pub hash: String,
+    pub block_number: u64,
+    pub timestamp: u64,
+    pub from: String,
+    pub to: Option<String>,
+    pub value: f64,
+    pub gas_limit: u64,
+    pub gas_used: u64,
+    pub gas_price: u64, // In gwei
+    pub nonce: u64,
+    pub transaction_index: Option<u64>,
+    pub input_data: String,
+    pub is_error: bool,
+    pub contract_address: Option<String>,
+}
+
+impl EtherscanClient {
+    /// Get transaction details via Etherscan V2
+    pub async fn get_transaction_details(
+        &self,
+        tx_hash: &str,
+    ) -> Result<EtherscanTransactionDetails> {
+        let url = self.base_url();
+        let chain_id = self.chain.chain_id();
+        let resp = self
+            .client
+            .get(url)
+            .query(&[
+                ("chainid", chain_id.to_string()),
+                ("module", "proxy".to_string()),
+                ("action", "eth_getTransactionByHash".to_string()),
+                ("txhash", tx_hash.to_string()),
+                ("apikey", self.api_key.clone()),
+            ])
+            .send()
+            .await
+            .map_err(|e| Error::network(format!("Etherscan request failed: {}", e)))?;
+
+        if !resp.status().is_success() {
+            return Err(Error::network(format!(
+                "Etherscan HTTP error: {}",
+                resp.status()
+            )));
+        }
+
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| Error::network(format!("Etherscan response read failed: {}", e)))?;
+        let json: serde_json::Value = serde_json::from_str(&text).map_err(Error::serialization)?;
+
+        let result = json
+            .get("result")
+            .ok_or_else(|| Error::parse("Missing result field from Etherscan response"))?;
+
+        // Parse transaction data
+        let hash = result
+            .get("hash")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| Error::parse("Missing hash field"))?
+            .to_string();
+
+        let block_number_str = result
+            .get("blockNumber")
+            .and_then(|v| v.as_str())
+            .unwrap_or("0x0");
+        let block_number = u64::from_str_radix(block_number_str.trim_start_matches("0x"), 16)
+            .map_err(|e| Error::parse(format!("Failed to parse block number: {}", e)))?;
+
+        let _timestamp = 0; // Will be fetched separately if needed
+
+        let from = result
+            .get("from")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| Error::parse("Missing from field"))?
+            .to_string();
+
+        let to = result
+            .get("to")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let value_str = result
+            .get("value")
+            .and_then(|v| v.as_str())
+            .unwrap_or("0x0");
+        let value_wei = U256::from_str_radix(value_str.trim_start_matches("0x"), 16)
+            .map_err(|e| Error::parse(format!("Failed to parse value: {}", e)))?;
+        let value =
+            value_wei.to_string().parse::<f64>().unwrap_or(0.0) / 1_000_000_000_000_000_000.0;
+
+        let gas_str = result.get("gas").and_then(|v| v.as_str()).unwrap_or("0x0");
+        let gas_limit = u64::from_str_radix(gas_str.trim_start_matches("0x"), 16)
+            .map_err(|e| Error::parse(format!("Failed to parse gas: {}", e)))?;
+
+        let _gas_used = 0; // Will be fetched from receipt if needed
+
+        let gas_price_str = result
+            .get("gasPrice")
+            .and_then(|v| v.as_str())
+            .unwrap_or("0x0");
+        let gas_price_wei = U256::from_str_radix(gas_price_str.trim_start_matches("0x"), 16)
+            .map_err(|e| Error::parse(format!("Failed to parse gas price: {}", e)))?;
+        // Convert to gwei (1 gwei = 10^9 wei)
+        let gas_price = gas_price_wei.to_string().parse::<f64>().unwrap_or(0.0) / 1_000_000_000.0;
+        let gas_price = gas_price as u64;
+
+        let nonce_str = result
+            .get("nonce")
+            .and_then(|v| v.as_str())
+            .unwrap_or("0x0");
+        let nonce = u64::from_str_radix(nonce_str.trim_start_matches("0x"), 16)
+            .map_err(|e| Error::parse(format!("Failed to parse nonce: {}", e)))?;
+
+        let transaction_index_str = result
+            .get("transactionIndex")
+            .and_then(|v| v.as_str())
+            .map(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).unwrap_or(0));
+
+        let input_data = result
+            .get("input")
+            .and_then(|v| v.as_str())
+            .unwrap_or("0x")
+            .to_string();
+
+        // Check if this is a contract creation (to is None and input data is not empty)
+        let contract_address = if to.is_none() && !input_data.is_empty() {
+            // For contract creation, we'd need to get the receipt, but for now return None
+            None
+        } else {
+            None
+        };
+
+        // Get transaction receipt to check status and get gas used
+        let receipt = self.get_transaction_receipt(tx_hash).await?;
+        let (gas_used, is_error) = if let Some(receipt) = receipt {
+            let gas_used_str = receipt
+                .get("gasUsed")
+                .and_then(|v| v.as_str())
+                .unwrap_or("0x0");
+            let gas_used =
+                u64::from_str_radix(gas_used_str.trim_start_matches("0x"), 16).unwrap_or(0);
+            let status_str = receipt
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("0x1");
+            let is_error = status_str == "0x0";
+            (gas_used, is_error)
+        } else {
+            (0, false)
+        };
+
+        // Get block timestamp
+        let timestamp = if block_number > 0 {
+            self.get_block_timestamp(block_number).await.unwrap_or(0)
+        } else {
+            0
+        };
+
+        Ok(EtherscanTransactionDetails {
+            hash,
+            block_number,
+            timestamp,
+            from,
+            to,
+            value,
+            gas_limit,
+            gas_used,
+            gas_price,
+            nonce,
+            transaction_index: transaction_index_str,
+            input_data,
+            is_error,
+            contract_address,
+        })
+    }
+
+    /// Get transaction receipt
+    async fn get_transaction_receipt(&self, tx_hash: &str) -> Result<Option<serde_json::Value>> {
+        let url = self.base_url();
+        let chain_id = self.chain.chain_id();
+        let resp = self
+            .client
+            .get(url)
+            .query(&[
+                ("chainid", chain_id.to_string()),
+                ("module", "proxy".to_string()),
+                ("action", "eth_getTransactionReceipt".to_string()),
+                ("txhash", tx_hash.to_string()),
+                ("apikey", self.api_key.clone()),
+            ])
+            .send()
+            .await
+            .map_err(|e| Error::network(format!("Etherscan request failed: {}", e)))?;
+
+        if !resp.status().is_success() {
+            return Ok(None);
+        }
+
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| Error::network(format!("Etherscan response read failed: {}", e)))?;
+        let json: serde_json::Value = serde_json::from_str(&text).map_err(Error::serialization)?;
+
+        let result = json.get("result").cloned();
+        Ok(result)
+    }
+
+    /// Get block timestamp
+    async fn get_block_timestamp(&self, block_number: u64) -> Result<u64> {
+        let url = self.base_url();
+        let chain_id = self.chain.chain_id();
+        let resp = self
+            .client
+            .get(url)
+            .query(&[
+                ("chainid", chain_id.to_string()),
+                ("module", "proxy".to_string()),
+                ("action", "eth_getBlockByNumber".to_string()),
+                ("tag", format!("0x{:x}", block_number)),
+                ("boolean", "false".to_string()),
+                ("apikey", self.api_key.clone()),
+            ])
+            .send()
+            .await
+            .map_err(|e| Error::network(format!("Etherscan request failed: {}", e)))?;
+
+        if !resp.status().is_success() {
+            return Err(Error::network(format!(
+                "Etherscan HTTP error: {}",
+                resp.status()
+            )));
+        }
+
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| Error::network(format!("Etherscan response read failed: {}", e)))?;
+        let json: serde_json::Value = serde_json::from_str(&text).map_err(Error::serialization)?;
+
+        let result = json
+            .get("result")
+            .ok_or_else(|| Error::parse("Missing result field"))?;
+
+        let timestamp_str = result
+            .get("timestamp")
+            .and_then(|v| v.as_str())
+            .unwrap_or("0x0");
+        let timestamp = u64::from_str_radix(timestamp_str.trim_start_matches("0x"), 16)
+            .map_err(|e| Error::parse(format!("Failed to parse timestamp: {}", e)))?;
+
+        Ok(timestamp)
     }
 }

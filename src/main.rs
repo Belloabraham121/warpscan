@@ -148,6 +148,15 @@ async fn run_app<B: ratatui::backend::Backend>(
         if let Ok(event) = event_handler.next().await {
             match event {
                 AppEvent::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                    // Ignore Ctrl+C (don't navigate to Settings)
+                    if key_event.code == KeyCode::Char('c')
+                        && key_event
+                            .modifiers
+                            .contains(crossterm::event::KeyModifiers::CONTROL)
+                    {
+                        // Ctrl+C - do nothing or quit (user's choice)
+                        continue;
+                    }
                     match handle_key_event(app, key_event.code).await {
                         Ok(should_quit) => {
                             if should_quit {
@@ -347,10 +356,7 @@ async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<boo
                     if let Some((item_type, tx_hash)) = navigation_data {
                         if item_type == "tx" {
                             // Navigate to transaction viewer with this transaction hash
-                            app.navigate_to(AppState::TransactionViewer);
-                            app.set_input(tx_hash);
-                            // TODO: Implement transaction lookup
-                            app.set_error("Transaction lookup not yet implemented".to_string());
+                            app.navigate_to_transaction(&tx_hash).await;
                             return Ok(false);
                         }
                     }
@@ -395,6 +401,12 @@ async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<boo
         KeyCode::Char('w') => app.navigate_to(AppState::WalletManager),
         KeyCode::Char('c') => app.navigate_to(AppState::Settings),
         KeyCode::Char('0') => app.navigate_to(AppState::Home),
+        KeyCode::Char('i') => {
+            // Toggle input data expansion in transaction viewer
+            if app.state == AppState::TransactionViewer {
+                app.input_data_expanded = !app.input_data_expanded;
+            }
+        }
         _ => {}
     }
     Ok(false)
@@ -452,10 +464,7 @@ async fn handle_editing_mode_keys(app: &mut App, key_code: KeyCode) -> Result<bo
                         }
                     } else if is_transaction_hash(&input) {
                         // Navigate to transaction viewer
-                        app.navigate_to(AppState::TransactionViewer);
-                        app.set_input(input);
-                        // TODO: Implement transaction lookup
-                        app.set_error("Transaction lookup not yet implemented".to_string());
+                        app.navigate_to_transaction(&input).await;
                     } else if is_block_number(&input) {
                         // Navigate to block explorer
                         app.navigate_to(AppState::BlockExplorer);
@@ -478,8 +487,7 @@ async fn handle_editing_mode_keys(app: &mut App, key_code: KeyCode) -> Result<bo
                 AppState::TransactionViewer => {
                     // On transaction viewer, search for transaction
                     if is_transaction_hash(&input) {
-                        // TODO: Implement transaction lookup
-                        app.set_error("Transaction lookup not yet implemented".to_string());
+                        app.navigate_to_transaction(&input).await;
                     } else {
                         app.set_error("Invalid transaction hash format. Hash must start with 0x and be 66 characters long.".to_string());
                     }
@@ -559,7 +567,7 @@ fn handle_home_click(app: &mut App, _x: u16, y: u16) {
     // This is a simplified implementation - in a real app you'd calculate based on actual layout
     if y >= 5 && y <= 18 {
         // Assuming menu items are in this range
-        let item_index = (y - 5) as usize;
+        let item_index = y.saturating_sub(5) as usize;
         match item_index {
             0 => app.navigate_to(AppState::BlockExplorer),
             1 => app.navigate_to(AppState::TransactionViewer),
@@ -621,7 +629,7 @@ async fn handle_address_lookup_click(app: &mut App, x: u16, y: u16) -> Result<()
             // Calculate which row was clicked (approximate)
             // Table starts around y=9, header is 1 row, so data starts at y=10
             if y >= 10 {
-                let row_index = (y - 10) as usize;
+                let row_index = y.saturating_sub(10) as usize;
                 match address_data.current_tab {
                     AddressTab::Transactions => {
                         if row_index < address_data.transactions.len() {
@@ -683,7 +691,7 @@ async fn handle_address_lookup_click(app: &mut App, x: u16, y: u16) -> Result<()
 
             // Check if click is on transaction hash column
             if click_x < 25 {
-                app.navigate_to_transaction(&tx_hash);
+                app.navigate_to_transaction(&tx_hash).await;
             }
             // Check if click is on from address column
             else if click_x >= 25 && click_x < 50 {

@@ -21,4 +21,4 @@ pub use internal_transaction::InternalTransaction;
 pub use network_stats::NetworkStats;
 pub use search_result::SearchResult;
 pub use token::{TokenInfo, TokenTransfer, TokenType};
-pub use transaction::{TransactionInfo, TransactionStatus};
+pub use transaction::{TransactionDetails, TransactionInfo, TransactionStatus};

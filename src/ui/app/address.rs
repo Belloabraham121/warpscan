@@ -34,6 +34,17 @@ impl App {
                     Err(_) => 0.0,
                 };
 
+                // Resolve ENS name for EOA addresses
+                let ens_name = match address_type {
+                    AddressType::EOA => {
+                        match self.blockchain_client.resolve_ens_name(address).await {
+                            Ok(name) => name,
+                            Err(_) => None,
+                        }
+                    }
+                    _ => None,
+                };
+
                 // Create comprehensive address details
                 let details = AddressDetails {
                     address: address.to_string(),
@@ -48,6 +59,7 @@ impl App {
                     contract_creator: None, // TODO: Implement contract creator lookup
                     creation_tx_hash: None, // TODO: Implement creation tx lookup
                     last_activity: chrono::Utc::now().timestamp() as u64, // TODO: Get actual last activity
+                    ens_name,
                 };
 
                 // Create complete address data with empty collections for now
@@ -133,47 +145,41 @@ impl App {
                     .collect();
 
                 // Fetch token transfers
-                let token_transfers: Vec<TokenTransfer> = match self
-                    .blockchain_client
-                    .get_token_transfers(address)
-                    .await
-                {
-                    Ok(transfers) => transfers
-                        .into_iter()
-                        .map(|t| TokenTransfer {
-                            token_id: t.token_id,
-                            txn_hash: t.txn_hash,
-                            from: t.from,
-                            to: t.to,
-                            token_name: t.token_name,
-                            token_symbol: t.token_symbol,
-                            amount: t.amount,
-                            timestamp: t.timestamp,
-                        })
-                        .collect(),
-                    Err(_) => Vec::new(),
-                };
+                let token_transfers: Vec<TokenTransfer> =
+                    match self.blockchain_client.get_token_transfers(address).await {
+                        Ok(transfers) => transfers
+                            .into_iter()
+                            .map(|t| TokenTransfer {
+                                token_id: t.token_id,
+                                txn_hash: t.txn_hash,
+                                from: t.from,
+                                to: t.to,
+                                token_name: t.token_name,
+                                token_symbol: t.token_symbol,
+                                amount: t.amount,
+                                timestamp: t.timestamp,
+                            })
+                            .collect(),
+                        Err(_) => Vec::new(),
+                    };
 
                 // Fetch token balances
-                let tokens: Vec<TokenInfo> = match self
-                    .blockchain_client
-                    .get_token_balances(address)
-                    .await
-                {
-                    Ok(balances) => balances
-                        .into_iter()
-                        .map(|b| TokenInfo {
-                            contract_address: b.contract_address,
-                            name: b.name,
-                            symbol: b.symbol,
-                            token_type: TokenType::ERC20, // Default to ERC20, could be enhanced
-                            balance: b.balance,
-                            value_usd: 0.0, // TODO: Fetch USD value from price API
-                            decimals: b.decimals,
-                        })
-                        .collect(),
-                    Err(_) => Vec::new(),
-                };
+                let tokens: Vec<TokenInfo> =
+                    match self.blockchain_client.get_token_balances(address).await {
+                        Ok(balances) => balances
+                            .into_iter()
+                            .map(|b| TokenInfo {
+                                contract_address: b.contract_address,
+                                name: b.name,
+                                symbol: b.symbol,
+                                token_type: TokenType::ERC20, // Default to ERC20, could be enhanced
+                                balance: b.balance,
+                                value_usd: 0.0, // TODO: Fetch USD value from price API
+                                decimals: b.decimals,
+                            })
+                            .collect(),
+                        Err(_) => Vec::new(),
+                    };
 
                 // Update token count in details
                 let token_count = tokens.len() as u32;
@@ -212,7 +218,7 @@ impl App {
                     token_transfers,
                     tokens,
                     internal_transactions,
-                    current_tab: AddressTab::Transactions,
+                    current_tab: AddressTab::Details, // Default to Details tab
                     selected_transaction_index: 0,
                     selected_history_index: 0,
                     selected_token_transfer_index: 0,
@@ -284,11 +290,32 @@ impl App {
     }
 
     /// Navigate to a transaction (used for clicking on transaction hashes)
-    pub fn navigate_to_transaction(&mut self, tx_hash: &str) {
+    pub async fn navigate_to_transaction(&mut self, tx_hash: &str) {
         self.navigate_to(crate::ui::app::state::AppState::TransactionViewer);
         self.set_input(tx_hash.to_string());
-        // TODO: Implement transaction lookup
-        self.set_error("Transaction lookup not yet implemented".to_string());
+        self.input_data_expanded = false; // Reset expansion state
+
+        // Clear previous transaction data
+        self.transaction_data = None;
+        self.set_loading("transaction_search", true);
+        self.clear_messages();
+
+        // Lookup transaction details
+        match self
+            .blockchain_client
+            .get_transaction_details(tx_hash)
+            .await
+        {
+            Ok(tx_details) => {
+                self.transaction_data = Some(tx_details);
+                self.set_success(format!("Transaction {} loaded successfully", tx_hash));
+            }
+            Err(e) => {
+                self.set_error(format!("Failed to lookup transaction: {}", e));
+            }
+        }
+
+        self.set_loading("transaction_search", false);
     }
 
     /// Move selection to previous item in current tab

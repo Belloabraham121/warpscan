@@ -53,6 +53,10 @@ pub struct App {
     pub dashboard_data: DashboardData,
     /// Address data for address lookup screen
     pub address_data: Option<CompleteAddressData>,
+    /// Transaction details for transaction viewer screen
+    pub transaction_data: Option<super::super::models::TransactionDetails>,
+    /// Whether input data section is expanded in transaction viewer
+    pub input_data_expanded: bool,
 }
 
 impl App {
@@ -85,6 +89,8 @@ impl App {
             event_sender: None,
             dashboard_data: DashboardData::mock(),
             address_data: None,
+            transaction_data: None,
+            input_data_expanded: false,
         }
     }
 

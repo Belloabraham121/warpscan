@@ -394,4 +394,333 @@ impl BlockchainService {
     pub fn get_network_name(&self) -> String {
         self.config.network.name.clone()
     }
+
+    /// Resolve ENS name for an address (only works on mainnet)
+    pub async fn resolve_ens_name(&self, address: &str) -> Result<Option<String>> {
+        // Only resolve ENS on Ethereum mainnet (chain ID 1)
+        if self.config.network.chain_id != 1 {
+            return Ok(None);
+        }
+
+        let addr = Address::from_str(address)
+            .map_err(|e| Error::validation(format!("Invalid address: {}", e)))?;
+
+        // Use ethers-rs ENS resolver
+        match self.provider.lookup_address(addr).await {
+            Ok(name) => Ok(Some(name)),
+            Err(_) => {
+                // ENS resolution failed - address might not have an ENS name
+                // This is not an error, just return None
+                Ok(None)
+            }
+        }
+    }
+
+    /// Get transaction details - tries Etherscan first, falls back to RPC (for local nodes)
+    pub async fn get_transaction_details(
+        &self,
+        tx_hash: &str,
+    ) -> Result<crate::ui::models::TransactionDetails> {
+        use crate::ui::models::{TransactionDetails, TransactionStatus};
+
+        // Check if this is a local node (Anvil/Hardhat) - skip Etherscan for local nodes
+        let is_local_node = self
+            .config
+            .network
+            .node_type
+            .as_ref()
+            .map(|t| t == "anvil" || t == "hardhat")
+            .unwrap_or(false);
+
+        // Try Etherscan first if available and not a local node
+        if !is_local_node {
+            if let Some(ref client) = self.etherscan {
+                match client.get_transaction_details(tx_hash).await {
+                    Ok(etherscan_tx) => {
+                        // Convert Etherscan format to UI model
+                        let current_block = self.get_block_number().await.unwrap_or(0);
+                        let confirmations = if etherscan_tx.block_number > 0
+                            && current_block > etherscan_tx.block_number
+                        {
+                            current_block - etherscan_tx.block_number
+                        } else {
+                            0
+                        };
+
+                        // Try to decode method from input data (first 4 bytes = method selector)
+                        let method = if etherscan_tx.input_data.len() >= 10 {
+                            // Could decode method selector here, but for now return None
+                            None
+                        } else {
+                            None
+                        };
+
+                        // Calculate transaction fee (gas_used * gas_price in wei, convert to ETH)
+                        // gas_price is in gwei, so convert to wei first
+                        let gas_price_wei = etherscan_tx.gas_price as f64 * 1_000_000_000.0;
+                        let transaction_fee = (etherscan_tx.gas_used as f64 * gas_price_wei)
+                            / 1_000_000_000_000_000_000.0;
+
+                        // Fetch transfers for this transaction
+                        let mut transfers = self
+                            .get_transaction_transfers(
+                                tx_hash,
+                                &etherscan_tx.from,
+                                etherscan_tx.to.as_deref(),
+                            )
+                            .await
+                            .unwrap_or_default();
+
+                        // Add main ETH transfer if value > 0
+                        if etherscan_tx.value > 0.0 {
+                            if let Some(ref to_address) = etherscan_tx.to {
+                                use crate::ui::models::transaction::{
+                                    TransactionTransfer, TransferType,
+                                };
+                                transfers.insert(
+                                    0,
+                                    TransactionTransfer {
+                                        transfer_type: TransferType::ETH,
+                                        from: etherscan_tx.from.clone(),
+                                        to: to_address.clone(),
+                                        value: etherscan_tx.value,
+                                        token_symbol: None,
+                                        token_name: None,
+                                        token_address: None,
+                                    },
+                                );
+                            }
+                        }
+
+                        return Ok(TransactionDetails {
+                            hash: etherscan_tx.hash,
+                            status: if etherscan_tx.is_error {
+                                TransactionStatus::Failed
+                            } else {
+                                TransactionStatus::Success
+                            },
+                            block_number: etherscan_tx.block_number,
+                            timestamp: etherscan_tx.timestamp,
+                            from: etherscan_tx.from,
+                            to: etherscan_tx.to,
+                            value: etherscan_tx.value,
+                            gas_limit: etherscan_tx.gas_limit,
+                            gas_used: etherscan_tx.gas_used,
+                            gas_price: etherscan_tx.gas_price,
+                            transaction_fee,
+                            nonce: etherscan_tx.nonce,
+                            transaction_index: etherscan_tx.transaction_index,
+                            input_data: etherscan_tx.input_data,
+                            method,
+                            contract_address: etherscan_tx.contract_address,
+                            confirmations,
+                            transfers,
+                        });
+                    }
+                    Err(err) => {
+                        // Fallback to RPC if Etherscan fails
+                        tracing::warn!(
+                            target = "warpscan",
+                            "Etherscan failed for transaction: {}. Falling back to RPC.",
+                            err
+                        );
+                    }
+                }
+            }
+        }
+
+        // Fallback to RPC provider (works with local nodes like Anvil/Hardhat)
+        let hash = H256::from_str(tx_hash)
+            .map_err(|e| Error::validation(format!("Invalid transaction hash: {}", e)))?;
+
+        let tx = self
+            .provider
+            .get_transaction(hash)
+            .await
+            .map_err(|e| Error::blockchain(format!("Failed to get transaction: {}", e)))?;
+
+        let tx = tx.ok_or_else(|| Error::blockchain("Transaction not found".to_string()))?;
+
+        let receipt = self
+            .provider
+            .get_transaction_receipt(hash)
+            .await
+            .map_err(|e| Error::blockchain(format!("Failed to get receipt: {}", e)))?;
+
+        let block_number = tx.block_number.map(|n| n.as_u64()).unwrap_or(0);
+        let current_block = self.get_block_number().await.unwrap_or(0);
+        let confirmations = if block_number > 0 && current_block > block_number {
+            current_block - block_number
+        } else {
+            0
+        };
+
+        // Get block timestamp
+        let timestamp = if block_number > 0 {
+            self.get_block_by_number(block_number)
+                .await?
+                .map(|b| b.timestamp.as_u64())
+                .unwrap_or(0)
+        } else {
+            0
+        };
+
+        let value_eth =
+            tx.value.to_string().parse::<f64>().unwrap_or(0.0) / 1_000_000_000_000_000_000.0;
+
+        let gas_price_gwei = if let Some(gp) = &tx.gas_price {
+            (gp.to_string().parse::<f64>().unwrap_or(0.0) / 1_000_000_000.0) as u64
+        } else {
+            0
+        };
+
+        let gas_used = receipt
+            .as_ref()
+            .and_then(|r| r.gas_used.map(|g| g.as_u64()))
+            .unwrap_or(0);
+
+        // Calculate transaction fee (gas_used * gas_price in wei, convert to ETH)
+        let gas_price_wei = gas_price_gwei as f64 * 1_000_000_000.0;
+        let transaction_fee = (gas_used as f64 * gas_price_wei) / 1_000_000_000_000_000_000.0;
+
+        let status = if let Some(ref r) = receipt {
+            if r.status == Some(ethers::types::U64::from(1)) {
+                TransactionStatus::Success
+            } else {
+                TransactionStatus::Failed
+            }
+        } else {
+            TransactionStatus::Pending
+        };
+
+        // Try to decode method from input data
+        let method = if tx.input.len() >= 4 {
+            // Could decode method selector here
+            None
+        } else {
+            None
+        };
+
+        // Fetch transfers for this transaction
+        let from_addr = format!("{:?}", tx.from);
+        let to_addr = tx.to.as_ref().map(|a| format!("{:?}", a));
+        let mut transfers = self
+            .get_transaction_transfers(tx_hash, &from_addr, to_addr.as_deref())
+            .await
+            .unwrap_or_default();
+
+        // Add main ETH transfer if value > 0
+        if value_eth > 0.0 {
+            if let Some(ref to_address) = to_addr {
+                use crate::ui::models::transaction::{TransactionTransfer, TransferType};
+                transfers.insert(
+                    0,
+                    TransactionTransfer {
+                        transfer_type: TransferType::ETH,
+                        from: from_addr.clone(),
+                        to: to_address.clone(),
+                        value: value_eth,
+                        token_symbol: None,
+                        token_name: None,
+                        token_address: None,
+                    },
+                );
+            }
+        }
+
+        Ok(TransactionDetails {
+            hash: tx_hash.to_string(),
+            status,
+            block_number,
+            timestamp,
+            from: from_addr,
+            to: to_addr,
+            value: value_eth,
+            gas_limit: tx.gas.as_u64(),
+            gas_used,
+            gas_price: gas_price_gwei,
+            transaction_fee,
+            nonce: tx.nonce.as_u64(),
+            transaction_index: tx.transaction_index.map(|i| i.as_u64()),
+            input_data: format!("0x{}", hex::encode(&tx.input)),
+            method,
+            contract_address: receipt
+                .as_ref()
+                .and_then(|r| r.contract_address.map(|a| format!("{:?}", a))),
+            confirmations,
+            transfers,
+        })
+    }
+
+    /// Get all transfers for a transaction (ETH, tokens, internal)
+    async fn get_transaction_transfers(
+        &self,
+        tx_hash: &str,
+        from: &str,
+        to: Option<&str>,
+    ) -> Result<Vec<crate::ui::models::transaction::TransactionTransfer>> {
+        use crate::ui::models::transaction::{TransactionTransfer, TransferType};
+
+        let mut transfers = Vec::new();
+
+        // Get token transfers for this transaction
+        if let Some(ref client) = self.etherscan {
+            // Get token transfers from both from and to addresses, filter by tx_hash
+            let from_transfers = client.get_token_transfers(from).await.unwrap_or_default();
+            let to_transfers = if let Some(to_addr) = to {
+                client
+                    .get_token_transfers(to_addr)
+                    .await
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+
+            // Filter by transaction hash and convert to TransactionTransfer
+            for transfer in from_transfers.iter().chain(to_transfers.iter()) {
+                if transfer.txn_hash.to_lowercase() == tx_hash.to_lowercase() {
+                    transfers.push(TransactionTransfer {
+                        transfer_type: TransferType::Token,
+                        from: transfer.from.clone(),
+                        to: transfer.to.clone(),
+                        value: transfer.amount,
+                        token_symbol: Some(transfer.token_symbol.clone()),
+                        token_name: Some(transfer.token_name.clone()),
+                        token_address: None, // Could be added if needed
+                    });
+                }
+            }
+
+            // Get internal transactions
+            let from_internal = client
+                .get_internal_transactions(from)
+                .await
+                .unwrap_or_default();
+            let to_internal = if let Some(to_addr) = to {
+                client
+                    .get_internal_transactions(to_addr)
+                    .await
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+
+            // Filter by parent transaction hash
+            for internal in from_internal.iter().chain(to_internal.iter()) {
+                if internal.parent_tx_hash.to_lowercase() == tx_hash.to_lowercase() {
+                    transfers.push(TransactionTransfer {
+                        transfer_type: TransferType::Internal,
+                        from: internal.from.clone(),
+                        to: internal.to.clone(),
+                        value: internal.value,
+                        token_symbol: None,
+                        token_name: None,
+                        token_address: None,
+                    });
+                }
+            }
+        }
+
+        Ok(transfers)
+    }
 }

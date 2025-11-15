@@ -371,27 +371,21 @@ async fn handle_mouse_event(app: &mut App, mouse_event: MouseEvent) -> Result<bo
 fn handle_home_click(app: &mut App, _x: u16, y: u16) {
     // Calculate which menu item was clicked based on position
     // This is a simplified implementation - in a real app you'd calculate based on actual layout
+    // Only navigate to implemented screens
     if y >= 5 && y <= 18 { // Assuming menu items are in this range
         let item_index = (y - 5) as usize;
-        if item_index < 13 { // We have 13 menu items
-            app.current_list_index = item_index;
-            // Simulate Enter key press to navigate
-            match item_index {
-                0 => app.navigate_to(AppState::BlockExplorer),
-                1 => app.navigate_to(AppState::TransactionViewer),
-                2 => app.navigate_to(AppState::AddressLookup),
-                3 => app.navigate_to(AppState::ContractSearch),
-                4 => app.navigate_to(AppState::TokenInfo),
-                5 => app.navigate_to(AppState::GasTracker),
-                6 => app.navigate_to(AppState::ContractInteraction),
-                7 => app.navigate_to(AppState::ContractVerification),
-                8 => app.navigate_to(AppState::WalletManager),
-                9 => app.navigate_to(AppState::MultisigWallet),
-                10 => app.navigate_to(AppState::EventMonitor),
-                11 => app.navigate_to(AppState::Settings),
-                12 => app.navigate_to(AppState::Help),
-                _ => {}
-            }
+        // Only handle clicks for implemented screens
+        match item_index {
+            0 => app.navigate_to(AppState::BlockExplorer),
+            1 => app.navigate_to(AppState::TransactionViewer),
+            2 => app.navigate_to(AppState::AddressLookup),
+            3 => app.navigate_to(AppState::GasTracker),
+            4 => app.navigate_to(AppState::WalletManager),
+            5 => app.navigate_to(AppState::Settings),
+            // Unimplemented screens (ContractSearch, TokenInfo, ContractInteraction,
+            // ContractVerification, MultisigWallet, EventMonitor, Help) are not accessible
+            // until their render functions are implemented
+            _ => {}
         }
     }
 }

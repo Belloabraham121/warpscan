@@ -45,6 +45,16 @@ pub struct InternalTransaction {
     pub timestamp: u64,
 }
 
+/// Token balance information from Etherscan API
+#[derive(Debug, Clone)]
+pub struct TokenBalance {
+    pub contract_address: String,
+    pub name: String,
+    pub symbol: String,
+    pub decimals: u8,
+    pub balance: f64,
+}
+
 impl EtherscanChain {
     fn chain_id(&self) -> u64 {
         match self {
@@ -438,5 +448,82 @@ impl EtherscanClient {
             .collect();
 
         Ok(internal_txns)
+    }
+
+    /// Get token balances for an address via Etherscan V2
+    pub async fn get_token_balances(&self, address: &str) -> Result<Vec<TokenBalance>> {
+        let url = self.base_url();
+        let chain_id = self.chain.chain_id();
+        let resp = self
+            .client
+            .get(url)
+            .query(&[
+                ("chainid", chain_id.to_string()),
+                ("module", "account".to_string()),
+                ("action", "tokenlist".to_string()),
+                ("address", address.to_string()),
+                ("apikey", self.api_key.clone()),
+            ])
+            .send()
+            .await
+            .map_err(|e| Error::network(format!("Etherscan request failed: {}", e)))?;
+
+        if !resp.status().is_success() {
+            return Err(Error::network(format!(
+                "Etherscan HTTP error: {}",
+                resp.status()
+            )));
+        }
+
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| Error::network(format!("Etherscan response read failed: {}", e)))?;
+        let json: serde_json::Value = serde_json::from_str(&text).map_err(Error::serialization)?;
+
+        let result = json
+            .get("result")
+            .ok_or_else(|| Error::parse("Missing result field from Etherscan response"))?;
+        let arr = result
+            .as_array()
+            .ok_or_else(|| Error::parse("Unexpected result type for tokenlist"))?;
+
+        let tokens: Vec<TokenBalance> = arr
+            .iter()
+            .filter_map(|item| {
+                let contract_address = item.get("contractAddress")?.as_str()?.to_string();
+                let name = item
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown")
+                    .to_string();
+                let symbol = item
+                    .get("symbol")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let decimals_str = item
+                    .get("decimals")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("18");
+                let decimals = decimals_str.parse::<u8>().unwrap_or(18);
+                let balance_str = item.get("balance")?.as_str()?.to_string();
+
+                // Convert balance with proper decimals
+                let balance_wei = U256::from_dec_str(&balance_str).ok()?;
+                let divisor = 10_u64.pow(decimals as u32) as f64;
+                let balance = balance_wei.to_string().parse::<f64>().unwrap_or(0.0) / divisor;
+
+                Some(TokenBalance {
+                    contract_address,
+                    name,
+                    symbol,
+                    decimals,
+                    balance,
+                })
+            })
+            .collect();
+
+        Ok(tokens)
     }
 }

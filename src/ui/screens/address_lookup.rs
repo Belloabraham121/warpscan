@@ -430,15 +430,6 @@ fn render_address_transactions_tab(
             .border_style(theme.border()),
     )
     .column_spacing(1)
-    .widths([
-        Constraint::Length(18),
-        Constraint::Length(14),
-        Constraint::Length(10),
-        Constraint::Length(10),
-        Constraint::Percentage(20),
-        Constraint::Percentage(20),
-        Constraint::Length(14),
-    ])
     .highlight_style(theme.selected());
 
     let mut state = TableState::default();

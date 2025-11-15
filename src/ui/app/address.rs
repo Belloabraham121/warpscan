@@ -1,4 +1,7 @@
-use super::super::models::{AddressDetails, AddressTab, AddressType, CompleteAddressData};
+use super::super::models::{
+    AccountHistoryEntry, AddressDetails, AddressTab, AddressType, CompleteAddressData,
+    InternalTransaction, TokenInfo, TokenTransfer, TokenType,
+};
 use super::core::App;
 use crate::blockchain::types::AddressTx as ServiceAddressTx;
 use crate::blockchain::types::TransactionStatus as ChainTransactionStatus;
@@ -60,18 +63,18 @@ impl App {
 
                 // Map to UI model
                 let ui_txs: Vec<super::super::models::AddressTransaction> = txs
-                    .into_iter()
+                    .iter()
                     .map(|t| super::super::models::AddressTransaction {
-                        tx_hash: t.tx_hash,
+                        tx_hash: t.tx_hash.clone(),
                         tx_type: if t.method.is_empty() {
                             "Transfer".to_string()
                         } else {
                             "Contract Call".to_string()
                         },
-                        method: t.method,
+                        method: t.method.clone(),
                         block: t.block_number,
-                        from: t.from,
-                        to: t.to,
+                        from: t.from.clone(),
+                        to: t.to.clone(),
                         value: t.value_eth,
                         fee: t.fee_eth,
                         timestamp: t.timestamp,
@@ -92,13 +95,123 @@ impl App {
                     })
                     .collect();
 
+                // Convert transactions to account history entries
+                let account_history: Vec<AccountHistoryEntry> = txs
+                    .iter()
+                    .map(|t| {
+                        // Determine action based on address
+                        let action = if t.from.to_lowercase() == address.to_lowercase() {
+                            "Sent".to_string()
+                        } else if t.to.to_lowercase() == address.to_lowercase() {
+                            "Received".to_string()
+                        } else {
+                            "Unknown".to_string()
+                        };
+
+                        // Calculate age from timestamp
+                        let now = chrono::Utc::now().timestamp() as u64;
+                        let age_seconds = now.saturating_sub(t.timestamp);
+                        let age = if age_seconds < 60 {
+                            format!("{}s ago", age_seconds)
+                        } else if age_seconds < 3600 {
+                            format!("{}m ago", age_seconds / 60)
+                        } else if age_seconds < 86400 {
+                            format!("{}h ago", age_seconds / 3600)
+                        } else {
+                            format!("{}d ago", age_seconds / 86400)
+                        };
+
+                        AccountHistoryEntry {
+                            age,
+                            action,
+                            from: t.from.clone(),
+                            to: t.to.clone(),
+                            timestamp: t.timestamp,
+                            tx_hash: t.tx_hash.clone(),
+                        }
+                    })
+                    .collect();
+
+                // Fetch token transfers
+                let token_transfers: Vec<TokenTransfer> = match self
+                    .blockchain_client
+                    .get_token_transfers(address)
+                    .await
+                {
+                    Ok(transfers) => transfers
+                        .into_iter()
+                        .map(|t| TokenTransfer {
+                            token_id: t.token_id,
+                            txn_hash: t.txn_hash,
+                            from: t.from,
+                            to: t.to,
+                            token_name: t.token_name,
+                            token_symbol: t.token_symbol,
+                            amount: t.amount,
+                            timestamp: t.timestamp,
+                        })
+                        .collect(),
+                    Err(_) => Vec::new(),
+                };
+
+                // Fetch token balances
+                let tokens: Vec<TokenInfo> = match self
+                    .blockchain_client
+                    .get_token_balances(address)
+                    .await
+                {
+                    Ok(balances) => balances
+                        .into_iter()
+                        .map(|b| TokenInfo {
+                            contract_address: b.contract_address,
+                            name: b.name,
+                            symbol: b.symbol,
+                            token_type: TokenType::ERC20, // Default to ERC20, could be enhanced
+                            balance: b.balance,
+                            value_usd: 0.0, // TODO: Fetch USD value from price API
+                            decimals: b.decimals,
+                        })
+                        .collect(),
+                    Err(_) => Vec::new(),
+                };
+
+                // Update token count in details
+                let token_count = tokens.len() as u32;
+
+                // Fetch internal transactions
+                let internal_transactions: Vec<InternalTransaction> = match self
+                    .blockchain_client
+                    .get_internal_transactions(address)
+                    .await
+                {
+                    Ok(txns) => txns
+                        .into_iter()
+                        .map(|t| InternalTransaction {
+                            parent_tx_hash: t.parent_tx_hash,
+                            block: t.block,
+                            from: t.from,
+                            to: t.to,
+                            value: t.value,
+                            gas_limit: t.gas_limit,
+                            gas_used: t.gas_used,
+                            tx_type: t.tx_type,
+                            timestamp: t.timestamp,
+                        })
+                        .collect(),
+                    Err(_) => Vec::new(),
+                };
+
+                // Update details with token count
+                let mut details = details;
+                details.token_count = token_count;
+
                 let complete_data = CompleteAddressData {
                     details,
                     transactions: ui_txs,
-                    account_history: Vec::new(),
-                    token_transfers: Vec::new(),
-                    tokens: Vec::new(),
-                    internal_transactions: Vec::new(),
+                    account_history,
+                    token_transfers,
+                    tokens,
+                    internal_transactions,
                     current_tab: AddressTab::Transactions,
                     selected_transaction_index: 0,
                     selected_history_index: 0,

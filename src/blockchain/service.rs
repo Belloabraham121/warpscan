@@ -2,7 +2,7 @@
 
 use super::etherscan::{
     EtherscanChain, EtherscanClient, InternalTransaction as EtherscanInternalTransaction,
-    TokenTransfer as EtherscanTokenTransfer,
+    TokenBalance as EtherscanTokenBalance, TokenTransfer as EtherscanTokenTransfer,
 };
 use super::types::AddressTx;
 use super::types::GasPrices;
@@ -289,6 +289,24 @@ impl BlockchainService {
                     tracing::warn!(
                         target = "warpscan",
                         "Etherscan failed for txlistinternal: {}. Returning empty list.",
+                        err
+                    );
+                    return Ok(vec![]);
+                }
+            }
+        }
+        Ok(vec![])
+    }
+
+    /// Get token balances for an address
+    pub async fn get_token_balances(&self, address: &str) -> Result<Vec<EtherscanTokenBalance>> {
+        if let Some(ref client) = self.etherscan {
+            match client.get_token_balances(address).await {
+                Ok(tokens) => return Ok(tokens),
+                Err(err) => {
+                    tracing::warn!(
+                        target = "warpscan",
+                        "Etherscan failed for tokenlist: {}. Returning empty list.",
                         err
                     );
                     return Ok(vec![]);

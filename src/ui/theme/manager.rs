@@ -46,7 +46,10 @@ impl ThemeManager {
 
     /// Get available theme names
     pub fn available_themes(&self) -> Vec<&'static str> {
-        self.available_themes.iter().map(|(name, _)| *name).collect()
+        self.available_themes
+            .iter()
+            .map(|(name, _)| *name)
+            .collect()
     }
 
     /// Cycle to the next theme

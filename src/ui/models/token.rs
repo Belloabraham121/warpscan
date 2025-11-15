@@ -17,7 +17,8 @@ impl Default for TokenTransfer {
     fn default() -> Self {
         Self {
             token_id: None,
-            txn_hash: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab".to_string(),
+            txn_hash: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
+                .to_string(),
             from: "0x1111111111111111111111111111111111111111".to_string(),
             to: "0x2222222222222222222222222222222222222222".to_string(),
             token_name: "Tether USD".to_string(),

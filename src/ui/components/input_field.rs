@@ -2,12 +2,12 @@
 //!
 //! This module contains the input field component.
 
+use crate::ui::theme::Theme;
 use ratatui::{
     layout::Rect,
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
-use crate::ui::theme::Theme;
 
 /// Render input field
 pub fn render_input_field(

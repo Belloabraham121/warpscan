@@ -3,13 +3,13 @@
 //! This module provides the main cache manager for storing and retrieving
 //! blockchain data with TTL support.
 
+use super::types::{AddressInfo, CacheEntry, CacheStats, ContractInfo, TokenInfo};
+use crate::config::Config;
+use crate::error::Result;
+use ethers::types::{Block, Transaction, H256};
 use lru::LruCache;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
-use ethers::types::{Block, Transaction, H256};
-use crate::error::Result;
-use crate::config::Config;
-use super::types::{CacheEntry, AddressInfo, ContractInfo, TokenInfo, CacheStats};
 
 /// Main cache manager
 #[derive(Clone)]
@@ -20,7 +20,7 @@ pub struct CacheManager {
     addresses: Arc<Mutex<LruCache<String, CacheEntry<AddressInfo>>>>,
     contracts: Arc<Mutex<LruCache<String, CacheEntry<ContractInfo>>>>,
     tokens: Arc<Mutex<LruCache<String, CacheEntry<TokenInfo>>>>,
-    
+
     /// Configuration
     config: Config,
 }
@@ -30,9 +30,9 @@ impl CacheManager {
     pub fn new(config: Config) -> Result<Self> {
         let cache_dir = Config::cache_dir()?;
         std::fs::create_dir_all(&cache_dir)?;
-        
+
         let cache_size = NonZeroUsize::new(1000).unwrap(); // Default cache size
-        
+
         Ok(Self {
             blocks: Arc::new(Mutex::new(LruCache::new(cache_size))),
             transactions: Arc::new(Mutex::new(LruCache::new(cache_size))),
@@ -48,7 +48,7 @@ impl CacheManager {
         if !self.config.cache.enabled {
             return None;
         }
-        
+
         let mut cache = self.blocks.lock().unwrap();
         if let Some(entry) = cache.get(&block_number) {
             if !self.is_expired(entry) {
@@ -65,7 +65,7 @@ impl CacheManager {
         if !self.config.cache.enabled {
             return;
         }
-        
+
         let entry = CacheEntry {
             data: block,
             timestamp: std::time::SystemTime::now()
@@ -74,7 +74,7 @@ impl CacheManager {
                 .as_secs(),
             ttl_seconds: self.config.cache.block_ttl_seconds,
         };
-        
+
         let mut cache = self.blocks.lock().unwrap();
         cache.put(block_number, entry);
     }
@@ -84,7 +84,7 @@ impl CacheManager {
         if !self.config.cache.enabled {
             return None;
         }
-        
+
         let mut cache = self.transactions.lock().unwrap();
         if let Some(entry) = cache.get(tx_hash) {
             if !self.is_expired(entry) {
@@ -101,7 +101,7 @@ impl CacheManager {
         if !self.config.cache.enabled {
             return;
         }
-        
+
         let entry = CacheEntry {
             data: transaction,
             timestamp: std::time::SystemTime::now()
@@ -110,7 +110,7 @@ impl CacheManager {
                 .as_secs(),
             ttl_seconds: self.config.cache.transaction_ttl_seconds,
         };
-        
+
         let mut cache = self.transactions.lock().unwrap();
         cache.put(tx_hash, entry);
     }
@@ -120,7 +120,7 @@ impl CacheManager {
         if !self.config.cache.enabled {
             return None;
         }
-        
+
         let mut cache = self.addresses.lock().unwrap();
         if let Some(entry) = cache.get(address) {
             if !self.is_expired(entry) {
@@ -137,7 +137,7 @@ impl CacheManager {
         if !self.config.cache.enabled {
             return;
         }
-        
+
         let entry = CacheEntry {
             data: info,
             timestamp: std::time::SystemTime::now()
@@ -146,7 +146,7 @@ impl CacheManager {
                 .as_secs(),
             ttl_seconds: self.config.cache.address_ttl_seconds,
         };
-        
+
         let mut cache = self.addresses.lock().unwrap();
         cache.put(address, entry);
     }
@@ -156,7 +156,7 @@ impl CacheManager {
         if !self.config.cache.enabled {
             return None;
         }
-        
+
         let mut cache = self.contracts.lock().unwrap();
         if let Some(entry) = cache.get(address) {
             if !self.is_expired(entry) {
@@ -173,7 +173,7 @@ impl CacheManager {
         if !self.config.cache.enabled {
             return;
         }
-        
+
         let entry = CacheEntry {
             data: info,
             timestamp: std::time::SystemTime::now()
@@ -182,7 +182,7 @@ impl CacheManager {
                 .as_secs(),
             ttl_seconds: self.config.cache.contract_ttl_seconds,
         };
-        
+
         let mut cache = self.contracts.lock().unwrap();
         cache.put(address, entry);
     }
@@ -212,14 +212,18 @@ impl CacheManager {
         let addresses_count = self.addresses.lock().unwrap().len();
         let contracts_count = self.contracts.lock().unwrap().len();
         let tokens_count = self.tokens.lock().unwrap().len();
-        
+
         CacheStats {
             blocks_count,
             transactions_count,
             addresses_count,
             contracts_count,
             tokens_count,
-            total_entries: blocks_count + transactions_count + addresses_count + contracts_count + tokens_count,
+            total_entries: blocks_count
+                + transactions_count
+                + addresses_count
+                + contracts_count
+                + tokens_count,
         }
     }
 }

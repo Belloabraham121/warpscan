@@ -2,6 +2,8 @@
 //!
 //! This module handles the setup and initialization of the tracing framework.
 
+use crate::config::Config;
+use std::fs::OpenOptions;
 use tracing::Level;
 use tracing_subscriber::{
     fmt::{self, format::FmtSpan},
@@ -9,8 +11,6 @@ use tracing_subscriber::{
     util::SubscriberInitExt,
     EnvFilter, Layer,
 };
-use std::fs::OpenOptions;
-use crate::config::Config;
 
 /// Initialize the logging system
 pub fn init_logging(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
@@ -28,7 +28,7 @@ pub fn init_logging(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("Could not find home directory")?
         .join(".warpscan")
         .join("logs");
-    
+
     std::fs::create_dir_all(&log_dir)?;
 
     // File appender for logs

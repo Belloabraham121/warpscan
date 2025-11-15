@@ -2,13 +2,13 @@
 //!
 //! This module contains the block explorer screen implementation.
 
+use crate::ui::{app::App, theme::Theme};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
-use crate::ui::{app::App, theme::Theme};
 
 /// Render the block explorer screen
 pub fn render_block_explorer(frame: &mut Frame, app: &App, theme: &Theme) {

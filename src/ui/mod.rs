@@ -14,17 +14,14 @@ pub use app::{App, AppState, InputMode};
 pub use events::{Event, EventHandler};
 pub use theme::Theme;
 
+use crate::error::{Error, Result};
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{
-    backend::CrosstermBackend,
-    Terminal,
-};
+use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
-use crate::error::{Error, Result};
 
 /// Terminal type alias
 pub type Tui = Terminal<CrosstermBackend<io::Stdout>>;
@@ -33,21 +30,19 @@ pub type Tui = Terminal<CrosstermBackend<io::Stdout>>;
 pub fn init() -> Result<Tui> {
     execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)
         .map_err(|e| Error::ui(format!("Failed to enter alternate screen: {}", e)))?;
-    
-    enable_raw_mode()
-        .map_err(|e| Error::ui(format!("Failed to enable raw mode: {}", e)))?;
-    
+
+    enable_raw_mode().map_err(|e| Error::ui(format!("Failed to enable raw mode: {}", e)))?;
+
     Terminal::new(CrosstermBackend::new(io::stdout()))
         .map_err(|e| Error::ui(format!("Failed to create terminal: {}", e)))
 }
 
 /// Restore the terminal
 pub fn restore() -> Result<()> {
-    disable_raw_mode()
-        .map_err(|e| Error::ui(format!("Failed to disable raw mode: {}", e)))?;
-    
+    disable_raw_mode().map_err(|e| Error::ui(format!("Failed to disable raw mode: {}", e)))?;
+
     execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)
         .map_err(|e| Error::ui(format!("Failed to leave alternate screen: {}", e)))?;
-    
+
     Ok(())
 }

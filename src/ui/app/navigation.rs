@@ -2,34 +2,8 @@ use super::core::App;
 use super::state::{AppState, InputMode};
 
 impl App {
-    /// Check if a screen is implemented and can be navigated to
-    fn is_screen_implemented(state: &AppState) -> bool {
-        matches!(
-            state,
-            AppState::Home
-                | AppState::BlockExplorer
-                | AppState::TransactionViewer
-                | AppState::AddressLookup
-                | AppState::GasTracker
-                | AppState::WalletManager
-                | AppState::Settings
-                | AppState::Quit
-        )
-    }
-
     /// Navigate to a new state
-    /// Only allows navigation to implemented screens
     pub fn navigate_to(&mut self, new_state: AppState) {
-        // Prevent navigation to unimplemented screens
-        if !Self::is_screen_implemented(&new_state) {
-            // Set an error message instead of navigating
-            self.set_error(format!(
-                "Screen '{}' is not yet implemented",
-                new_state.title()
-            ));
-            return;
-        }
-
         if self.state != new_state {
             self.navigation_history.push(self.state.clone());
             self.previous_state = Some(self.state.clone());
@@ -56,6 +30,14 @@ impl App {
         self.cursor_position = 0;
         self.input_mode = InputMode::Normal;
         self.clear_messages();
+        // Reset address data selection indices when switching screens
+        if let Some(ref mut address_data) = self.address_data {
+            address_data.selected_transaction_index = 0;
+            address_data.selected_history_index = 0;
+            address_data.selected_token_transfer_index = 0;
+            address_data.selected_token_index = 0;
+            address_data.selected_internal_txn_index = 0;
+        }
     }
 
     /// Clear all messages

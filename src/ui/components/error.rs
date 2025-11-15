@@ -2,13 +2,13 @@
 //!
 //! This module contains the error message component.
 
+use crate::ui::theme::Theme;
 use ratatui::{
     layout::{Alignment, Rect},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
     Frame,
 };
-use crate::ui::theme::Theme;
 
 /// Render an error message
 pub fn render_error(frame: &mut Frame, area: Rect, theme: &Theme, message: &str) {

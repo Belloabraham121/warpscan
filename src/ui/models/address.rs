@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use super::TransactionStatus;
+use serde::{Deserialize, Serialize};
 
 /// Address information for search results
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,17 +38,18 @@ pub struct AddressDetails {
     pub contract_creator: Option<String>,
     pub creation_tx_hash: Option<String>,
     pub last_activity: u64,
+    pub ens_name: Option<String>, // ENS name for EOA addresses
 }
 
 /// Address type enumeration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AddressType {
-    EOA,           // Externally Owned Account (Wallet)
-    Contract,      // Smart Contract
-    Token,         // Token Contract
-    MultiSig,      // Multi-signature Wallet
-    Exchange,      // Exchange Address
-    Unknown,       // Unknown type
+    EOA,      // Externally Owned Account (Wallet)
+    Contract, // Smart Contract
+    Token,    // Token Contract
+    MultiSig, // Multi-signature Wallet
+    Exchange, // Exchange Address
+    Unknown,  // Unknown type
 }
 
 impl Default for AddressDetails {
@@ -66,6 +67,7 @@ impl Default for AddressDetails {
             contract_creator: None,
             creation_tx_hash: None,
             last_activity: 1640995200,
+            ens_name: None,
         }
     }
 }
@@ -88,7 +90,8 @@ pub struct AddressTransaction {
 impl Default for AddressTransaction {
     fn default() -> Self {
         Self {
-            tx_hash: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab".to_string(),
+            tx_hash: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
+                .to_string(),
             tx_type: "Transfer".to_string(),
             method: "transfer".to_string(),
             block: 21_234_567,
@@ -121,7 +124,8 @@ impl Default for AccountHistoryEntry {
             from: "0x1111111111111111111111111111111111111111".to_string(),
             to: "0x2222222222222222222222222222222222222222".to_string(),
             timestamp: 1640995200,
-            tx_hash: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab".to_string(),
+            tx_hash: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
+                .to_string(),
         }
     }
 }
@@ -137,6 +141,10 @@ pub struct CompleteAddressData {
     pub internal_transactions: Vec<super::InternalTransaction>,
     pub current_tab: AddressTab,
     pub selected_transaction_index: usize,
+    pub selected_history_index: usize,
+    pub selected_token_transfer_index: usize,
+    pub selected_token_index: usize,
+    pub selected_internal_txn_index: usize,
 }
 
 /// Address detail tabs

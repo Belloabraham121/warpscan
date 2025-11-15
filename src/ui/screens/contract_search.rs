@@ -1,6 +1,6 @@
-//! Settings screen for WarpScan
+//! Contract Search screen for WarpScan
 //!
-//! This module contains the settings screen implementation.
+//! This module contains the contract search screen implementation.
 
 use crate::ui::{app::App, theme::Theme};
 use ratatui::{
@@ -9,8 +9,8 @@ use ratatui::{
     Frame,
 };
 
-/// Render the settings screen
-pub fn render_settings(frame: &mut Frame, _app: &App, theme: &Theme) {
+/// Render the contract search screen
+pub fn render_contract_search(frame: &mut Frame, _app: &App, theme: &Theme) {
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -20,7 +20,7 @@ pub fn render_settings(frame: &mut Frame, _app: &App, theme: &Theme) {
         .split(frame.area());
 
     // Title
-    let title = Paragraph::new("Settings")
+    let title = Paragraph::new("Contract Search")
         .style(theme.title())
         .alignment(Alignment::Center)
         .block(
@@ -31,7 +31,7 @@ pub fn render_settings(frame: &mut Frame, _app: &App, theme: &Theme) {
     frame.render_widget(title, main_chunks[0]);
 
     // Content area
-    let content = Paragraph::new("Settings screen - Coming soon")
+    let content = Paragraph::new("Contract Search screen - Coming soon")
         .style(theme.normal())
         .alignment(Alignment::Center)
         .block(

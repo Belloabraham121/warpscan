@@ -2,13 +2,13 @@
 //!
 //! This module contains the loading spinner component.
 
+use crate::ui::theme::Theme;
 use ratatui::{
     layout::{Alignment, Rect},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
     Frame,
 };
-use crate::ui::theme::Theme;
 
 /// Render a loading spinner
 pub fn render_loading(frame: &mut Frame, area: Rect, theme: &Theme, message: &str) {

@@ -48,8 +48,8 @@ impl KeyEventUtils {
 
     /// Check if the key event is Shift+Tab
     pub fn is_shift_tab(key_event: &KeyEvent) -> bool {
-        key_event.code == KeyCode::BackTab || 
-        (key_event.code == KeyCode::Tab && key_event.modifiers.contains(KeyModifiers::SHIFT))
+        key_event.code == KeyCode::BackTab
+            || (key_event.code == KeyCode::Tab && key_event.modifiers.contains(KeyModifiers::SHIFT))
     }
 
     /// Check if the key event is Backspace
@@ -64,7 +64,10 @@ impl KeyEventUtils {
 
     /// Check if the key event is an arrow key
     pub fn is_arrow_key(key_event: &KeyEvent) -> bool {
-        matches!(key_event.code, KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right)
+        matches!(
+            key_event.code,
+            KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right
+        )
     }
 
     /// Check if the key event is Up arrow

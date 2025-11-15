@@ -2,12 +2,12 @@
 //!
 //! This module contains the home screen implementation with dashboard functionality.
 
+use crate::ui::{app::App, theme::Theme};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
     Frame,
 };
-use crate::ui::{app::App, theme::Theme};
 
 /// Render the home screen with TegroScan-style dashboard
 pub fn render_home(frame: &mut Frame, app: &App, theme: &Theme) {
@@ -38,7 +38,7 @@ pub fn render_home(frame: &mut Frame, app: &App, theme: &Theme) {
     } else {
         "🔍 Search (Press / or s to search)"
     };
-    
+
     let search_style = if app.current_tab == 2 {
         ratatui::style::Style::default()
             .fg(ratatui::style::Color::Black)
@@ -48,13 +48,13 @@ pub fn render_home(frame: &mut Frame, app: &App, theme: &Theme) {
             .fg(ratatui::style::Color::White)
             .bg(ratatui::style::Color::Black)
     };
-    
+
     let search_border_color = if app.current_tab == 2 {
         ratatui::style::Color::Cyan
     } else {
         ratatui::style::Color::Blue
     };
-    
+
     let search_bar = Paragraph::new(app.get_input())
         .style(search_style)
         .block(
@@ -62,18 +62,22 @@ pub fn render_home(frame: &mut Frame, app: &App, theme: &Theme) {
                 .borders(Borders::ALL)
                 .title(search_title)
                 .border_style(ratatui::style::Style::default().fg(search_border_color))
-                .title_style(ratatui::style::Style::default().fg(ratatui::style::Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD)),
+                .title_style(
+                    ratatui::style::Style::default()
+                        .fg(ratatui::style::Color::Cyan)
+                        .add_modifier(ratatui::style::Modifier::BOLD),
+                ),
         )
         .wrap(Wrap { trim: true });
     frame.render_widget(search_bar, main_chunks[1]);
-    
+
     // Show cursor when in editing mode
-     if app.input_mode == crate::ui::InputMode::Editing && app.current_tab == 2 {
-         frame.set_cursor_position((
-             main_chunks[1].x + app.cursor_position as u16 + 1,
-             main_chunks[1].y + 1,
-         ));
-     }
+    if app.input_mode == crate::ui::InputMode::Editing && app.current_tab == 2 {
+        frame.set_cursor_position((
+            main_chunks[1].x + app.cursor_position as u16 + 1,
+            main_chunks[1].y + 1,
+        ));
+    }
 
     // Network statistics
     render_network_stats(frame, main_chunks[2], app, theme);
@@ -112,14 +116,19 @@ fn render_network_stats(frame: &mut Frame, area: ratatui::layout::Rect, app: &Ap
         .title("💰 Network Price")
         .borders(Borders::ALL)
         .border_style(ratatui::style::Style::default().fg(price_color))
-        .title_style(ratatui::style::Style::default().fg(ratatui::style::Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD));
-    let price_text = Paragraph::new(format!(
-        "${:.2}\n{:+.2}%",
-        stats.ethereum_price, 4.15
-    ))
-    .style(ratatui::style::Style::default().fg(ratatui::style::Color::White).add_modifier(ratatui::style::Modifier::BOLD))
-    .block(price_block)
-    .alignment(Alignment::Center);
+        .title_style(
+            ratatui::style::Style::default()
+                .fg(ratatui::style::Color::Cyan)
+                .add_modifier(ratatui::style::Modifier::BOLD),
+        );
+    let price_text = Paragraph::new(format!("${:.2}\n{:+.2}%", stats.ethereum_price, 4.15))
+        .style(
+            ratatui::style::Style::default()
+                .fg(ratatui::style::Color::White)
+                .add_modifier(ratatui::style::Modifier::BOLD),
+        )
+        .block(price_block)
+        .alignment(Alignment::Center);
     frame.render_widget(price_text, stats_chunks[0]);
 
     // Market Cap with enhanced styling
@@ -128,13 +137,21 @@ fn render_network_stats(frame: &mut Frame, area: ratatui::layout::Rect, app: &Ap
         .title("📊 Market Cap")
         .borders(Borders::ALL)
         .border_style(ratatui::style::Style::default().fg(market_cap_color))
-        .title_style(ratatui::style::Style::default().fg(ratatui::style::Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD));
+        .title_style(
+            ratatui::style::Style::default()
+                .fg(ratatui::style::Color::Cyan)
+                .add_modifier(ratatui::style::Modifier::BOLD),
+        );
     let market_cap_text = Paragraph::new(format!(
         "${:.2}B\n{:+.2}%",
         stats.market_cap / 1_000_000_000.0,
         1.23
     ))
-    .style(ratatui::style::Style::default().fg(ratatui::style::Color::White).add_modifier(ratatui::style::Modifier::BOLD))
+    .style(
+        ratatui::style::Style::default()
+            .fg(ratatui::style::Color::White)
+            .add_modifier(ratatui::style::Modifier::BOLD),
+    )
     .block(market_cap_block)
     .alignment(Alignment::Center);
     frame.render_widget(market_cap_text, stats_chunks[1]);
@@ -144,14 +161,19 @@ fn render_network_stats(frame: &mut Frame, area: ratatui::layout::Rect, app: &Ap
         .title("🔗 Latest Block")
         .borders(Borders::ALL)
         .border_style(ratatui::style::Style::default().fg(ratatui::style::Color::Yellow))
-        .title_style(ratatui::style::Style::default().fg(ratatui::style::Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD));
-    let latest_block_text = Paragraph::new(format!(
-        "#{}\n12 secs ago",
-        stats.latest_block
-    ))
-    .style(ratatui::style::Style::default().fg(ratatui::style::Color::White).add_modifier(ratatui::style::Modifier::BOLD))
-    .block(latest_block_block)
-    .alignment(Alignment::Center);
+        .title_style(
+            ratatui::style::Style::default()
+                .fg(ratatui::style::Color::Cyan)
+                .add_modifier(ratatui::style::Modifier::BOLD),
+        );
+    let latest_block_text = Paragraph::new(format!("#{}\n12 secs ago", stats.latest_block))
+        .style(
+            ratatui::style::Style::default()
+                .fg(ratatui::style::Color::White)
+                .add_modifier(ratatui::style::Modifier::BOLD),
+        )
+        .block(latest_block_block)
+        .alignment(Alignment::Center);
     frame.render_widget(latest_block_text, stats_chunks[2]);
 
     // Transaction History with enhanced styling
@@ -159,12 +181,20 @@ fn render_network_stats(frame: &mut Frame, area: ratatui::layout::Rect, app: &Ap
         .title("📈 Transaction History")
         .borders(Borders::ALL)
         .border_style(ratatui::style::Style::default().fg(ratatui::style::Color::Magenta))
-        .title_style(ratatui::style::Style::default().fg(ratatui::style::Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD));
+        .title_style(
+            ratatui::style::Style::default()
+                .fg(ratatui::style::Color::Cyan)
+                .add_modifier(ratatui::style::Modifier::BOLD),
+        );
     let tx_history_text = Paragraph::new(format!(
         "{:.1}M\n14.5 TPS",
         stats.transactions_count as f64 / 1_000_000.0
     ))
-    .style(ratatui::style::Style::default().fg(ratatui::style::Color::White).add_modifier(ratatui::style::Modifier::BOLD))
+    .style(
+        ratatui::style::Style::default()
+            .fg(ratatui::style::Color::White)
+            .add_modifier(ratatui::style::Modifier::BOLD),
+    )
     .block(tx_history_block)
     .alignment(Alignment::Center);
     frame.render_widget(tx_history_text, stats_chunks[3]);
@@ -173,7 +203,7 @@ fn render_network_stats(frame: &mut Frame, area: ratatui::layout::Rect, app: &Ap
 /// Render latest blocks section
 fn render_latest_blocks(frame: &mut Frame, area: ratatui::layout::Rect, app: &App, _theme: &Theme) {
     let blocks = &app.dashboard_data.latest_blocks;
-    
+
     let block_items: Vec<ListItem> = blocks
         .iter()
         .enumerate()
@@ -186,7 +216,7 @@ fn render_latest_blocks(frame: &mut Frame, area: ratatui::layout::Rect, app: &Ap
             } else {
                 ratatui::style::Style::default().fg(ratatui::style::Color::White)
             };
-            
+
             let content = format!(
                 "#{:<8} │ {:<12} │ {:>3} txns │ {}",
                 block.number,
@@ -210,7 +240,11 @@ fn render_latest_blocks(frame: &mut Frame, area: ratatui::layout::Rect, app: &Ap
                 .title("🔗 Latest Blocks")
                 .borders(Borders::ALL)
                 .border_style(ratatui::style::Style::default().fg(border_color))
-                .title_style(ratatui::style::Style::default().fg(ratatui::style::Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD)),
+                .title_style(
+                    ratatui::style::Style::default()
+                        .fg(ratatui::style::Color::Cyan)
+                        .add_modifier(ratatui::style::Modifier::BOLD),
+                ),
         )
         .highlight_style(
             ratatui::style::Style::default()
@@ -223,14 +257,19 @@ fn render_latest_blocks(frame: &mut Frame, area: ratatui::layout::Rect, app: &Ap
     if app.current_tab == 0 {
         list_state.select(Some(app.current_list_index));
     }
-    
+
     frame.render_stateful_widget(blocks_list, area, &mut list_state);
 }
 
 /// Render latest transactions section
-fn render_latest_transactions(frame: &mut Frame, area: ratatui::layout::Rect, app: &App, _theme: &Theme) {
+fn render_latest_transactions(
+    frame: &mut Frame,
+    area: ratatui::layout::Rect,
+    app: &App,
+    _theme: &Theme,
+) {
     let transactions = &app.dashboard_data.latest_transactions;
-    
+
     let tx_items: Vec<ListItem> = transactions
         .iter()
         .enumerate()
@@ -243,7 +282,7 @@ fn render_latest_transactions(frame: &mut Frame, area: ratatui::layout::Rect, ap
             } else {
                 ratatui::style::Style::default().fg(ratatui::style::Color::White)
             };
-            
+
             let content = format!(
                 "{:<14} │ {:<10} │ {:>8.4} ETH │ {}",
                 &tx.hash[..14],
@@ -267,7 +306,11 @@ fn render_latest_transactions(frame: &mut Frame, area: ratatui::layout::Rect, ap
                 .title("💸 Latest Transactions")
                 .borders(Borders::ALL)
                 .border_style(ratatui::style::Style::default().fg(border_color))
-                .title_style(ratatui::style::Style::default().fg(ratatui::style::Color::Green).add_modifier(ratatui::style::Modifier::BOLD)),
+                .title_style(
+                    ratatui::style::Style::default()
+                        .fg(ratatui::style::Color::Green)
+                        .add_modifier(ratatui::style::Modifier::BOLD),
+                ),
         )
         .highlight_style(
             ratatui::style::Style::default()
@@ -280,6 +323,6 @@ fn render_latest_transactions(frame: &mut Frame, area: ratatui::layout::Rect, ap
     if app.current_tab == 1 {
         list_state.select(Some(app.current_list_index));
     }
-    
+
     frame.render_stateful_widget(transactions_list, area, &mut list_state);
 }

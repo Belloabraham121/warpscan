@@ -8,7 +8,10 @@ use crate::config::Config;
 pub fn log_startup_info() {
     tracing::info!("WarpScan Terminal Etherscan starting up");
     tracing::info!("Version: {}", env!("CARGO_PKG_VERSION"));
-    tracing::debug!("Rust version: {}", option_env!("CARGO_PKG_RUST_VERSION").unwrap_or("unknown"));
+    tracing::debug!(
+        "Rust version: {}",
+        option_env!("CARGO_PKG_RUST_VERSION").unwrap_or("unknown")
+    );
     tracing::debug!("Target: {}", std::env::consts::ARCH);
 }
 
@@ -29,14 +32,18 @@ pub fn log_config_info(config: &Config) {
     tracing::debug!("Cache TTL: {}s", config.cache.ttl_seconds);
     tracing::debug!("Theme: {}", config.ui.theme);
     // Log whether an Etherscan API key is configured without revealing it
-    let has_key = config.etherscan_api_key.as_ref().map(|k| !k.is_empty()).unwrap_or(false);
+    let has_key = config
+        .etherscan_api_key
+        .as_ref()
+        .map(|k| !k.is_empty())
+        .unwrap_or(false);
     tracing::debug!("Etherscan API key configured: {}", has_key);
 }
 
 /// Log error with context
 pub fn log_error_with_context(error: &dyn std::error::Error, context: &str) {
     tracing::error!("Error in {}: {}", context, error);
-    
+
     let mut source = error.source();
     let mut level = 1;
     while let Some(err) = source {

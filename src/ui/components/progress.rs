@@ -2,12 +2,12 @@
 //!
 //! This module contains the progress bar component.
 
+use crate::ui::theme::Theme;
 use ratatui::{
     layout::Rect,
     widgets::{Block, Borders, Gauge},
     Frame,
 };
-use crate::ui::theme::Theme;
 
 /// Render a progress bar
 pub fn render_progress(frame: &mut Frame, area: Rect, theme: &Theme, progress: f64, label: &str) {

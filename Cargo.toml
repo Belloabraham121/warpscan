@@ -50,3 +50,11 @@ dotenvy = "0.15"
 
 # Hex encoding/decoding
 hex = "0.4"
+
+[dev-dependencies]
+# Benchmarking
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "main_benchmark"
+harness = false

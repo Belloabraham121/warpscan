@@ -3,7 +3,8 @@
 //! This module provides functionality for generating and managing test wallets
 //! for contract interaction and testing purposes.
 
-use bip39::{Mnemonic, Language};
+use crate::error::{Error, Result};
+use bip39::{Language, Mnemonic};
 use ethers::{
     signers::{LocalWallet, Signer},
     types::{Address, Signature, U256},
@@ -11,7 +12,6 @@ use ethers::{
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
-use crate::error::{Error, Result};
 
 /// Wallet information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,24 +81,26 @@ impl WalletManager {
         // Generate random entropy
         let mut rng = rand::thread_rng();
         let entropy: [u8; 32] = rng.gen();
-        
+
         // Create mnemonic from entropy
         let mnemonic = Mnemonic::from_entropy(&entropy)
             .map_err(|e| Error::wallet(format!("Failed to generate mnemonic: {}", e)))?;
-        
+
         // Create wallet from mnemonic
-        let wallet = mnemonic.to_string().parse::<LocalWallet>()
+        let wallet = mnemonic
+            .to_string()
+            .parse::<LocalWallet>()
             .map_err(|e| Error::wallet(format!("Failed to create wallet from mnemonic: {}", e)))?;
-        
+
         let wallet_info = WalletInfo {
             address: format!("{:?}", wallet.address()),
             mnemonic: Some(mnemonic.to_string()),
             created_at: chrono::Utc::now().timestamp() as u64,
             name,
         };
-        
+
         self.wallets.push(wallet_info.clone());
-        
+
         Ok((wallet_info, wallet))
     }
 
@@ -110,16 +112,16 @@ impl WalletManager {
     ) -> Result<(WalletInfo, LocalWallet)> {
         let wallet = LocalWallet::from_str(private_key)
             .map_err(|e| Error::wallet(format!("Invalid private key: {}", e)))?;
-        
+
         let wallet_info = WalletInfo {
             address: format!("{:?}", wallet.address()),
             mnemonic: None,
             created_at: chrono::Utc::now().timestamp() as u64,
             name,
         };
-        
+
         self.wallets.push(wallet_info.clone());
-        
+
         Ok((wallet_info, wallet))
     }
 
@@ -132,19 +134,20 @@ impl WalletManager {
         // Validate mnemonic
         let _mnemonic_obj = Mnemonic::parse_in_normalized(Language::English, mnemonic)
             .map_err(|e| Error::wallet(format!("Invalid mnemonic: {}", e)))?;
-        
-        let wallet = mnemonic.parse::<LocalWallet>()
+
+        let wallet = mnemonic
+            .parse::<LocalWallet>()
             .map_err(|e| Error::wallet(format!("Failed to create wallet from mnemonic: {}", e)))?;
-        
+
         let wallet_info = WalletInfo {
             address: format!("{:?}", wallet.address()),
             mnemonic: Some(mnemonic.to_string()),
             created_at: chrono::Utc::now().timestamp() as u64,
             name,
         };
-        
+
         self.wallets.push(wallet_info.clone());
-        
+
         Ok((wallet_info, wallet))
     }
 
@@ -160,7 +163,7 @@ impl WalletManager {
             .iter()
             .position(|w| w.address == address)
             .ok_or_else(|| Error::wallet("Wallet not found"))?;
-        
+
         self.wallets.remove(index);
         Ok(())
     }
@@ -176,17 +179,18 @@ impl WalletManager {
         if owners.is_empty() {
             return Err(Error::validation("At least one owner is required"));
         }
-        
+
         if threshold == 0 || threshold > owners.len() as u32 {
             return Err(Error::validation("Invalid threshold value"));
         }
-        
+
         // Validate owner addresses
         for owner in &owners {
-            Address::from_str(owner)
-                .map_err(|e| Error::validation(format!("Invalid owner address {}: {}", owner, e)))?;
+            Address::from_str(owner).map_err(|e| {
+                Error::validation(format!("Invalid owner address {}: {}", owner, e))
+            })?;
         }
-        
+
         // Generate a deterministic address based on owners and threshold
         // In a real implementation, this would be the actual deployed contract address
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -194,7 +198,7 @@ impl WalletManager {
         owners.hash(&mut hasher);
         threshold.hash(&mut hasher);
         let hash = hasher.finish();
-        
+
         let multisig_wallet = MultisigWallet {
             address: format!("0x{:040x}", hash), // Placeholder address
             owners,
@@ -202,9 +206,9 @@ impl WalletManager {
             created_at: chrono::Utc::now().timestamp() as u64,
             name,
         };
-        
+
         self.multisig_wallets.push(multisig_wallet.clone());
-        
+
         Ok(multisig_wallet)
     }
 
@@ -222,24 +226,23 @@ impl WalletManager {
             .sign_transaction(transaction)
             .await
             .map_err(|e| Error::wallet(format!("Failed to sign transaction: {}", e)))?;
-        
+
         Ok(signature)
     }
 
     /// Validate an Ethereum address
     pub fn validate_address(address: &str) -> Result<Address> {
-        Address::from_str(address)
-            .map_err(|e| Error::validation(format!("Invalid address: {}", e)))
+        Address::from_str(address).map_err(|e| Error::validation(format!("Invalid address: {}", e)))
     }
 
     /// Generate a random mnemonic phrase
     pub fn generate_mnemonic() -> Result<String> {
         let mut rng = rand::thread_rng();
         let entropy: [u8; 32] = rng.gen();
-        
+
         let mnemonic = Mnemonic::from_entropy(&entropy)
             .map_err(|e| Error::wallet(format!("Failed to generate mnemonic: {}", e)))?;
-        
+
         Ok(mnemonic.to_string())
     }
 
@@ -247,7 +250,7 @@ impl WalletManager {
     pub fn validate_mnemonic(mnemonic: &str) -> Result<()> {
         Mnemonic::parse_in_normalized(Language::English, mnemonic)
             .map_err(|e| Error::validation(format!("Invalid mnemonic: {}", e)))?;
-        
+
         Ok(())
     }
 

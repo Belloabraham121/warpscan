@@ -1,10 +1,10 @@
+use crate::ui::{app::App, theme::Theme};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
     text::Text,
     widgets::{Block, Borders, Paragraph, Tabs, Wrap},
     Frame,
 };
-use crate::ui::{app::App, theme::Theme};
 
 /// Render the wallet manager screen
 pub fn render_wallet_manager(frame: &mut Frame, app: &App, theme: &Theme) {

@@ -1,10 +1,10 @@
 //! Event handler for managing terminal and application events
 
+use super::types::{CustomEvent, Event};
+use crate::error::{Error, Result};
 use crossterm::event::{self, Event as CrosstermEvent};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
-use crate::error::{Error, Result};
-use super::types::{Event, CustomEvent};
 
 /// Event handler for managing terminal and application events
 pub struct EventHandler {

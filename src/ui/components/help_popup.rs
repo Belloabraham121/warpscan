@@ -2,13 +2,13 @@
 //!
 //! This module contains the help popup component.
 
+use crate::ui::theme::Theme;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem},
     Frame,
 };
-use crate::ui::theme::Theme;
 
 /// Render a help popup
 pub fn render_help_popup(frame: &mut Frame, area: Rect, theme: &Theme) {

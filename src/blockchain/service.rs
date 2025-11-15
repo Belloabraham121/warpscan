@@ -1,17 +1,23 @@
 //! Blockchain service implementation
 
+use super::etherscan::{
+    EtherscanChain, EtherscanClient, InternalTransaction as EtherscanInternalTransaction,
+    TokenTransfer as EtherscanTokenTransfer,
+};
+use super::types::AddressTx;
+use super::types::GasPrices;
+use crate::cache::{AddressInfo, CacheManager};
+use crate::config::Config;
+use crate::error::{Error, Result};
 use ethers::{
     providers::{Http, Middleware, Provider},
-    types::{Address, Block, Transaction, TransactionReceipt, H256, U256, TransactionRequest, transaction::eip2718::TypedTransaction},
+    types::{
+        transaction::eip2718::TypedTransaction, Address, Block, Transaction, TransactionReceipt,
+        TransactionRequest, H256, U256,
+    },
 };
 use std::str::FromStr;
 use std::sync::Arc;
-use crate::cache::{CacheManager, AddressInfo};
-use crate::config::Config;
-use crate::error::{Error, Result};
-use super::types::GasPrices;
-use super::types::AddressTx;
-use super::etherscan::{EtherscanClient, EtherscanChain};
 
 /// Blockchain service for interacting with Ethereum
 pub struct BlockchainService {
@@ -26,14 +32,17 @@ impl BlockchainService {
     pub async fn new(config: Config, cache: Arc<CacheManager>) -> Result<Self> {
         let provider = Provider::<Http>::try_from(&config.network.rpc_url)
             .map_err(|e| Error::network(format!("Failed to create provider: {}", e)))?;
-        
+
         let provider = Arc::new(provider);
-        
+
         // Skip connection test during initialization to allow offline startup
         // Connection will be tested when first network call is made
-        
+
         // Initialize Etherscan client if API key present
-        let api_key = config.etherscan_api_key.clone().or_else(|| std::env::var("ETHERSCAN_API_KEY").ok());
+        let api_key = config
+            .etherscan_api_key
+            .clone()
+            .or_else(|| std::env::var("ETHERSCAN_API_KEY").ok());
         let etherscan = api_key.map(|key| {
             let chain = match config.network.chain_id {
                 1 => EtherscanChain::Ethereum,
@@ -47,7 +56,7 @@ impl BlockchainService {
             };
             EtherscanClient::new(key, chain)
         });
-        
+
         Ok(Self {
             provider,
             cache,
@@ -55,15 +64,20 @@ impl BlockchainService {
             etherscan,
         })
     }
-    
+
     /// Test network connection
     pub async fn test_connection(&self) -> Result<u64> {
         match tokio::time::timeout(
             std::time::Duration::from_secs(self.config.network.timeout_seconds),
-            self.provider.get_chainid()
-        ).await {
+            self.provider.get_chainid(),
+        )
+        .await
+        {
             Ok(Ok(chain_id)) => Ok(chain_id.as_u64()),
-            Ok(Err(e)) => Err(Error::network(format!("Failed to connect to network: {}", e))),
+            Ok(Err(e)) => Err(Error::network(format!(
+                "Failed to connect to network: {}",
+                e
+            ))),
             Err(_) => Err(Error::network("Connection timeout".to_string())),
         }
     }
@@ -74,18 +88,18 @@ impl BlockchainService {
         if let Some(cached_block) = self.cache.get_block(block_number) {
             return Ok(Some(cached_block));
         }
-        
+
         let block = self
             .provider
             .get_block(block_number)
             .await
             .map_err(|e| Error::blockchain(format!("{}", e)))?;
-        
+
         // Store in cache if found
         if let Some(ref block) = block {
             self.cache.store_block(block_number, block.clone());
         }
-        
+
         Ok(block)
     }
 
@@ -96,14 +110,14 @@ impl BlockchainService {
             .get_block(ethers::types::BlockNumber::Latest)
             .await
             .map_err(|e| Error::blockchain(format!("{}", e)))?;
-        
+
         // Store in cache if found
         if let Some(ref block) = block {
             if let Some(number) = block.number {
                 self.cache.store_block(number.as_u64(), block.clone());
             }
         }
-        
+
         Ok(block)
     }
 
@@ -113,29 +127,33 @@ impl BlockchainService {
         if let Some(cached_tx) = self.cache.get_transaction(tx_hash) {
             return Ok(Some(cached_tx));
         }
-        
+
         let hash = H256::from_str(tx_hash)
             .map_err(|e| Error::validation(format!("Invalid transaction hash: {}", e)))?;
-        
+
         let tx = self
             .provider
             .get_transaction(hash)
             .await
             .map_err(|e| Error::blockchain(format!("{}", e)))?;
-        
+
         // Store in cache if found
         if let Some(ref tx) = tx {
-            self.cache.store_transaction(tx_hash.to_string(), tx.clone());
+            self.cache
+                .store_transaction(tx_hash.to_string(), tx.clone());
         }
-        
+
         Ok(tx)
     }
 
     /// Get transaction receipt
-    pub async fn get_transaction_receipt(&self, tx_hash: &str) -> Result<Option<TransactionReceipt>> {
+    pub async fn get_transaction_receipt(
+        &self,
+        tx_hash: &str,
+    ) -> Result<Option<TransactionReceipt>> {
         let hash = H256::from_str(tx_hash)
             .map_err(|e| Error::validation(format!("Invalid transaction hash: {}", e)))?;
-        
+
         self.provider
             .get_transaction_receipt(hash)
             .await
@@ -150,13 +168,17 @@ impl BlockchainService {
                 Ok(bal) => return Ok(bal),
                 Err(err) => {
                     // Fallback to provider on error
-                    tracing::warn!(target = "warpscan", "Etherscan failed for balance: {}. Falling back to provider.", err);
+                    tracing::warn!(
+                        target = "warpscan",
+                        "Etherscan failed for balance: {}. Falling back to provider.",
+                        err
+                    );
                 }
             }
         }
         let addr = Address::from_str(address)
             .map_err(|e| Error::validation(format!("Invalid address: {}", e)))?;
-        
+
         self.provider
             .get_balance(addr, None)
             .await
@@ -167,7 +189,7 @@ impl BlockchainService {
     pub async fn get_address_transaction_count(&self, address: &str) -> Result<U256> {
         let addr = Address::from_str(address)
             .map_err(|e| Error::validation(format!("Invalid address: {}", e)))?;
-        
+
         self.provider
             .get_transaction_count(addr, None)
             .await
@@ -178,10 +200,13 @@ impl BlockchainService {
     pub async fn is_contract(&self, address: &str) -> Result<bool> {
         let addr = Address::from_str(address)
             .map_err(|e| Error::validation(format!("Invalid address: {}", e)))?;
-        
-        let code = self.provider.get_code(addr, None).await
+
+        let code = self
+            .provider
+            .get_code(addr, None)
+            .await
             .map_err(|e| Error::blockchain(format!("{}", e)))?;
-        
+
         Ok(!code.is_empty())
     }
 
@@ -191,11 +216,11 @@ impl BlockchainService {
         if let Some(cached_info) = self.cache.get_address_info(address) {
             return Ok(cached_info);
         }
-        
+
         let balance = self.get_address_balance(address).await?;
         let transaction_count = self.get_address_transaction_count(address).await?;
         let is_contract = self.is_contract(address).await?;
-        
+
         let info = AddressInfo {
             address: address.to_string(),
             balance: balance.to_string(),
@@ -206,10 +231,11 @@ impl BlockchainService {
                 .unwrap()
                 .as_secs(),
         };
-        
+
         // Store in cache
-        self.cache.store_address_info(address.to_string(), info.clone());
-        
+        self.cache
+            .store_address_info(address.to_string(), info.clone());
+
         Ok(info)
     }
 
@@ -220,27 +246,71 @@ impl BlockchainService {
             match client.get_address_transactions(address).await {
                 Ok(txs) => return Ok(txs),
                 Err(err) => {
-                    tracing::warn!(target = "warpscan", "Etherscan failed for txlist: {}. Returning empty list.", err);
+                    tracing::warn!(
+                        target = "warpscan",
+                        "Etherscan failed for txlist: {}. Returning empty list.",
+                        err
+                    );
                     return Ok(vec![]);
                 }
             }
         }
-        // Fallback: provider doesn’t offer per-address tx listing easily; return empty for now
+        // Fallback: provider doesn't offer per-address tx listing easily; return empty for now
+        Ok(vec![])
+    }
+
+    /// Get token transfers for an address
+    pub async fn get_token_transfers(&self, address: &str) -> Result<Vec<EtherscanTokenTransfer>> {
+        if let Some(ref client) = self.etherscan {
+            match client.get_token_transfers(address).await {
+                Ok(transfers) => return Ok(transfers),
+                Err(err) => {
+                    tracing::warn!(
+                        target = "warpscan",
+                        "Etherscan failed for tokentx: {}. Returning empty list.",
+                        err
+                    );
+                    return Ok(vec![]);
+                }
+            }
+        }
+        Ok(vec![])
+    }
+
+    /// Get internal transactions for an address
+    pub async fn get_internal_transactions(
+        &self,
+        address: &str,
+    ) -> Result<Vec<EtherscanInternalTransaction>> {
+        if let Some(ref client) = self.etherscan {
+            match client.get_internal_transactions(address).await {
+                Ok(txns) => return Ok(txns),
+                Err(err) => {
+                    tracing::warn!(
+                        target = "warpscan",
+                        "Etherscan failed for txlistinternal: {}. Returning empty list.",
+                        err
+                    );
+                    return Ok(vec![]);
+                }
+            }
+        }
         Ok(vec![])
     }
 
     /// Get current gas prices
     pub async fn get_gas_prices(&self) -> Result<GasPrices> {
-        let gas_price = self.provider
+        let gas_price = self
+            .provider
             .get_gas_price()
             .await
             .map_err(|e| Error::blockchain(format!("{}", e)))?;
-        
+
         // Simple gas price estimation (in a real implementation, you might use a gas oracle)
-        let slow = gas_price * 80 / 100;  // 80% of current
+        let slow = gas_price * 80 / 100; // 80% of current
         let standard = gas_price;
         let fast = gas_price * 120 / 100; // 120% of current
-        
+
         Ok(GasPrices {
             slow,
             standard,
@@ -282,21 +352,19 @@ impl BlockchainService {
             .map_err(|e| Error::validation(format!("Invalid from address: {}", e)))?;
         let to_addr = Address::from_str(to)
             .map_err(|e| Error::validation(format!("Invalid to address: {}", e)))?;
-        
-        let mut tx = TransactionRequest::new()
-            .from(from_addr)
-            .to(to_addr);
-        
+
+        let mut tx = TransactionRequest::new().from(from_addr).to(to_addr);
+
         if let Some(data) = data {
             let data_bytes = hex::decode(data.trim_start_matches("0x"))
                 .map_err(|e| Error::validation(format!("Invalid data: {}", e)))?;
             tx = tx.data(data_bytes);
         }
-        
+
         if let Some(value) = value {
             tx = tx.value(value);
         }
-        
+
         let typed_tx = TypedTransaction::Legacy(tx.into());
         self.provider
             .estimate_gas(&typed_tx, None)

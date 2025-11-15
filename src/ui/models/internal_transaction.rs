@@ -17,7 +17,8 @@ pub struct InternalTransaction {
 impl Default for InternalTransaction {
     fn default() -> Self {
         Self {
-            parent_tx_hash: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab".to_string(),
+            parent_tx_hash: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
+                .to_string(),
             block: 21_234_567,
             from: "0x1111111111111111111111111111111111111111".to_string(),
             to: "0x2222222222222222222222222222222222222222".to_string(),

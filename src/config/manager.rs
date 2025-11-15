@@ -3,10 +3,10 @@
 //! This module provides functionality for loading, saving, and validating
 //! application configuration.
 
-use std::path::PathBuf;
+use super::types::{CacheConfig, Config, GasConfig, NetworkConfig, UiConfig};
 use crate::error::{Error, Result};
-use super::types::{Config, NetworkConfig, CacheConfig, UiConfig, GasConfig};
 use dotenvy::dotenv;
+use std::path::PathBuf;
 
 impl Default for Config {
     fn default() -> Self {
@@ -48,7 +48,7 @@ impl Config {
         // Load environment from .env if present
         let _ = dotenv();
         let config_path = Self::config_path()?;
-        
+
         if config_path.exists() {
             let config_str = std::fs::read_to_string(&config_path)?;
             let mut config: Config = toml::from_str(&config_str)
@@ -68,32 +68,32 @@ impl Config {
     /// Save configuration to file
     pub fn save(&self) -> Result<()> {
         let config_path = Self::config_path()?;
-        
+
         // Create config directory if it doesn't exist
         if let Some(parent) = config_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        
+
         let config_str = toml::to_string_pretty(self)
             .map_err(|e| Error::parse(format!("Failed to serialize config: {}", e)))?;
-        
+
         std::fs::write(&config_path, config_str)?;
         Ok(())
     }
 
     /// Get the configuration file path
     pub fn config_path() -> Result<PathBuf> {
-        let config_dir = dirs::config_dir()
-            .ok_or_else(|| Error::app("Could not determine config directory"))?;
-        
+        let config_dir =
+            dirs::config_dir().ok_or_else(|| Error::app("Could not determine config directory"))?;
+
         Ok(config_dir.join("warpscan").join("config.toml"))
     }
 
     /// Get the cache directory path
     pub fn cache_dir() -> Result<PathBuf> {
-        let cache_dir = dirs::cache_dir()
-            .ok_or_else(|| Error::app("Could not determine cache directory"))?;
-        
+        let cache_dir =
+            dirs::cache_dir().ok_or_else(|| Error::app("Could not determine cache directory"))?;
+
         Ok(cache_dir.join("warpscan"))
     }
 

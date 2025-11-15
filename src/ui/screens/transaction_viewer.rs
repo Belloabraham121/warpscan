@@ -2,13 +2,13 @@
 //!
 //! This module contains the transaction viewer screen implementation.
 
+use crate::ui::{app::App, theme::Theme};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
-use crate::ui::{app::App, theme::Theme};
 
 /// Render the transaction viewer screen
 pub fn render_transaction_viewer(frame: &mut Frame, app: &App, theme: &Theme) {

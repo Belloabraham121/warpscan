@@ -26,18 +26,11 @@ pub enum CustomEvent {
         data: serde_json::Value,
     },
     /// Error occurred
-    Error {
-        operation: String,
-        message: String,
-    },
+    Error { operation: String, message: String },
     /// Network status changed
-    NetworkStatusChanged {
-        connected: bool,
-    },
+    NetworkStatusChanged { connected: bool },
     /// Cache updated
-    CacheUpdated {
-        key: String,
-    },
+    CacheUpdated { key: String },
     /// Wallet operation completed
     WalletOperationCompleted {
         operation: String,

@@ -1,5 +1,5 @@
+use super::super::models::{AddressDetails, AddressTab, AddressType, CompleteAddressData};
 use super::core::App;
-use super::super::models::{AddressDetails, AddressType, AddressTab, CompleteAddressData};
 use crate::blockchain::types::AddressTx as ServiceAddressTx;
 use crate::blockchain::types::TransactionStatus as ChainTransactionStatus;
 
@@ -36,12 +36,12 @@ impl App {
                     address: address.to_string(),
                     address_type,
                     balance: balance_eth,
-                    token_count: 0, // TODO: Implement token counting
+                    token_count: 0,                   // TODO: Implement token counting
                     estimated_net_worth: balance_eth, // For now, just use ETH balance
                     total_transactions: address_info.transaction_count,
-                    outgoing_transfers: 0, // TODO: Implement transfer counting
-                    total_gas_used: 0, // TODO: Implement gas usage calculation
-                    contract_name: None, // TODO: Implement contract name resolution
+                    outgoing_transfers: 0,  // TODO: Implement transfer counting
+                    total_gas_used: 0,      // TODO: Implement gas usage calculation
+                    contract_name: None,    // TODO: Implement contract name resolution
                     contract_creator: None, // TODO: Implement contract creator lookup
                     creation_tx_hash: None, // TODO: Implement creation tx lookup
                     last_activity: chrono::Utc::now().timestamp() as u64, // TODO: Get actual last activity
@@ -49,16 +49,25 @@ impl App {
 
                 // Create complete address data with empty collections for now
                 // Fetch transactions via service
-                let txs: Vec<ServiceAddressTx> = match self.blockchain_client.get_address_transactions(address).await {
+                let txs: Vec<ServiceAddressTx> = match self
+                    .blockchain_client
+                    .get_address_transactions(address)
+                    .await
+                {
                     Ok(txs) => txs,
                     Err(_) => Vec::new(),
                 };
 
                 // Map to UI model
-                let ui_txs: Vec<super::super::models::AddressTransaction> = txs.into_iter().map(|t| {
-                    super::super::models::AddressTransaction {
+                let ui_txs: Vec<super::super::models::AddressTransaction> = txs
+                    .into_iter()
+                    .map(|t| super::super::models::AddressTransaction {
                         tx_hash: t.tx_hash,
-                        tx_type: if t.method.is_empty() { "Transfer".to_string() } else { "Contract Call".to_string() },
+                        tx_type: if t.method.is_empty() {
+                            "Transfer".to_string()
+                        } else {
+                            "Contract Call".to_string()
+                        },
                         method: t.method,
                         block: t.block_number,
                         from: t.from,
@@ -67,13 +76,21 @@ impl App {
                         fee: t.fee_eth,
                         timestamp: t.timestamp,
                         status: match t.status {
-                            ChainTransactionStatus::Pending => super::super::models::TransactionStatus::Pending,
-                            ChainTransactionStatus::Success => super::super::models::TransactionStatus::Success,
-                            ChainTransactionStatus::Failed => super::super::models::TransactionStatus::Failed,
-                            ChainTransactionStatus::Unknown => super::super::models::TransactionStatus::Pending,
+                            ChainTransactionStatus::Pending => {
+                                super::super::models::TransactionStatus::Pending
+                            }
+                            ChainTransactionStatus::Success => {
+                                super::super::models::TransactionStatus::Success
+                            }
+                            ChainTransactionStatus::Failed => {
+                                super::super::models::TransactionStatus::Failed
+                            }
+                            ChainTransactionStatus::Unknown => {
+                                super::super::models::TransactionStatus::Pending
+                            }
                         },
-                    }
-                }).collect();
+                    })
+                    .collect();
 
                 let complete_data = CompleteAddressData {
                     details,
@@ -84,6 +101,10 @@ impl App {
                     internal_transactions: Vec::new(),
                     current_tab: AddressTab::Transactions,
                     selected_transaction_index: 0,
+                    selected_history_index: 0,
+                    selected_token_transfer_index: 0,
+                    selected_token_index: 0,
+                    selected_internal_txn_index: 0,
                 };
 
                 self.address_data = Some(complete_data);
@@ -103,12 +124,20 @@ impl App {
     pub fn switch_address_tab(&mut self, tab: AddressTab) {
         if let Some(ref mut address_data) = self.address_data {
             address_data.current_tab = tab;
+            // Reset selection index when switching tabs
+            address_data.selected_transaction_index = 0;
+            address_data.selected_history_index = 0;
+            address_data.selected_token_transfer_index = 0;
+            address_data.selected_token_index = 0;
+            address_data.selected_internal_txn_index = 0;
         }
     }
 
     /// Get the current address tab
     pub fn get_current_address_tab(&self) -> Option<AddressTab> {
-        self.address_data.as_ref().map(|data| data.current_tab.clone())
+        self.address_data
+            .as_ref()
+            .map(|data| data.current_tab.clone())
     }
 
     /// Move selection to previous transaction in the Transactions tab
@@ -128,6 +157,108 @@ impl App {
                 if data.selected_transaction_index < max_index {
                     data.selected_transaction_index += 1;
                 }
+            }
+        }
+    }
+
+    /// Navigate to an address (used for clicking on addresses)
+    pub async fn navigate_to_address(&mut self, address: &str) {
+        self.navigate_to(crate::ui::app::state::AppState::AddressLookup);
+        self.set_input(address.to_string());
+        if let Err(e) = self.lookup_address(address).await {
+            self.set_error(format!("Failed to lookup address: {}", e));
+        }
+    }
+
+    /// Navigate to a transaction (used for clicking on transaction hashes)
+    pub fn navigate_to_transaction(&mut self, tx_hash: &str) {
+        self.navigate_to(crate::ui::app::state::AppState::TransactionViewer);
+        self.set_input(tx_hash.to_string());
+        // TODO: Implement transaction lookup
+        self.set_error("Transaction lookup not yet implemented".to_string());
+    }
+
+    /// Move selection to previous item in current tab
+    pub fn address_select_previous_item(&mut self) {
+        if let Some(ref mut data) = self.address_data {
+            match data.current_tab {
+                AddressTab::Transactions => {
+                    if !data.transactions.is_empty() && data.selected_transaction_index > 0 {
+                        data.selected_transaction_index -= 1;
+                    }
+                }
+                AddressTab::AccountHistory => {
+                    if !data.account_history.is_empty() && data.selected_history_index > 0 {
+                        data.selected_history_index -= 1;
+                    }
+                }
+                AddressTab::TokenTransfers => {
+                    if !data.token_transfers.is_empty() && data.selected_token_transfer_index > 0 {
+                        data.selected_token_transfer_index -= 1;
+                    }
+                }
+                AddressTab::Tokens => {
+                    if !data.tokens.is_empty() && data.selected_token_index > 0 {
+                        data.selected_token_index -= 1;
+                    }
+                }
+                AddressTab::InternalTxns => {
+                    if !data.internal_transactions.is_empty()
+                        && data.selected_internal_txn_index > 0
+                    {
+                        data.selected_internal_txn_index -= 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Move selection to next item in current tab
+    pub fn address_select_next_item(&mut self) {
+        if let Some(ref mut data) = self.address_data {
+            match data.current_tab {
+                AddressTab::Transactions => {
+                    if !data.transactions.is_empty() {
+                        let max_index = data.transactions.len().saturating_sub(1);
+                        if data.selected_transaction_index < max_index {
+                            data.selected_transaction_index += 1;
+                        }
+                    }
+                }
+                AddressTab::AccountHistory => {
+                    if !data.account_history.is_empty() {
+                        let max_index = data.account_history.len().saturating_sub(1);
+                        if data.selected_history_index < max_index {
+                            data.selected_history_index += 1;
+                        }
+                    }
+                }
+                AddressTab::TokenTransfers => {
+                    if !data.token_transfers.is_empty() {
+                        let max_index = data.token_transfers.len().saturating_sub(1);
+                        if data.selected_token_transfer_index < max_index {
+                            data.selected_token_transfer_index += 1;
+                        }
+                    }
+                }
+                AddressTab::Tokens => {
+                    if !data.tokens.is_empty() {
+                        let max_index = data.tokens.len().saturating_sub(1);
+                        if data.selected_token_index < max_index {
+                            data.selected_token_index += 1;
+                        }
+                    }
+                }
+                AddressTab::InternalTxns => {
+                    if !data.internal_transactions.is_empty() {
+                        let max_index = data.internal_transactions.len().saturating_sub(1);
+                        if data.selected_internal_txn_index < max_index {
+                            data.selected_internal_txn_index += 1;
+                        }
+                    }
+                }
+                _ => {}
             }
         }
     }

@@ -1,20 +1,20 @@
+use crate::ui::{app::App, theme::Theme};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
-    text::{Line, Span, Text},
     style::{Modifier, Style},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Tabs, Table, Row, Cell, Wrap, TableState},
+    text::{Line, Span, Text},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState, Tabs, Wrap},
     Frame,
 };
-use crate::ui::{app::App, theme::Theme};
 
 /// Render the address lookup screen
 pub fn render_address_lookup(frame: &mut Frame, app: &App, theme: &Theme) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Title
-            Constraint::Length(3),  // Input
-            Constraint::Min(0),     // Content
+            Constraint::Length(3), // Title
+            Constraint::Length(3), // Input
+            Constraint::Min(0),    // Content
         ])
         .split(frame.area());
 
@@ -45,9 +45,9 @@ pub fn render_address_lookup(frame: &mut Frame, app: &App, theme: &Theme) {
         let content_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),  // Address type indicator
-                Constraint::Length(3),  // Tabs
-                Constraint::Min(0),     // Tab content
+                Constraint::Length(3), // Address type indicator
+                Constraint::Length(3), // Tabs
+                Constraint::Min(0),    // Tab content
             ])
             .split(chunks[2]);
 
@@ -72,16 +72,33 @@ pub fn render_address_lookup(frame: &mut Frame, app: &App, theme: &Theme) {
                 );
             }
             crate::ui::models::AddressTab::AccountHistory => {
-                render_address_history_tab(frame, content_chunks[2], &address_data.account_history, theme);
+                render_address_history_tab(
+                    frame,
+                    content_chunks[2],
+                    &address_data.account_history,
+                    address_data.selected_history_index,
+                    theme,
+                );
             }
             crate::ui::models::AddressTab::TokenTransfers => {
-                render_token_transfers_tab(frame, content_chunks[2], &address_data.token_transfers, theme);
+                render_token_transfers_tab(
+                    frame,
+                    content_chunks[2],
+                    &address_data.token_transfers,
+                    address_data.selected_token_transfer_index,
+                    theme,
+                );
             }
             crate::ui::models::AddressTab::Tokens => {
                 render_tokens_tab(frame, content_chunks[2], &address_data.tokens, theme);
             }
             crate::ui::models::AddressTab::InternalTxns => {
-                render_internal_txns_tab(frame, content_chunks[2], &address_data.internal_transactions, theme);
+                render_internal_txns_tab(
+                    frame,
+                    content_chunks[2],
+                    &address_data.internal_transactions,
+                    theme,
+                );
             }
         }
     } else if !app.input.is_empty() {
@@ -113,7 +130,7 @@ fn render_address_type_indicator(
     theme: &Theme,
 ) {
     use crate::ui::models::AddressType;
-    
+
     let (type_text, type_style) = match details.address_type {
         AddressType::EOA => ("EOA (Wallet)", theme.success()),
         AddressType::Contract => ("Contract", theme.warning()),
@@ -153,9 +170,16 @@ fn render_address_tabs(
     theme: &Theme,
 ) {
     use crate::ui::models::AddressTab;
-    
-    let tab_titles = vec!["Details", "Transactions", "Account History", "Token Transfers", "Tokens", "Internal Txns"];
-    
+
+    let tab_titles = vec![
+        "Details",
+        "Transactions",
+        "Account History",
+        "Token Transfers",
+        "Tokens",
+        "Internal Txns",
+    ];
+
     let selected_index = match current_tab {
         AddressTab::Details => 0,
         AddressTab::Transactions => 1,
@@ -202,7 +226,10 @@ fn render_address_details_tab(
         ]),
         Line::from(vec![
             Span::styled("Estimated Net Worth: ", theme.label()),
-            Span::styled(format!("${:.2}", details.estimated_net_worth), theme.warning()),
+            Span::styled(
+                format!("${:.2}", details.estimated_net_worth),
+                theme.warning(),
+            ),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -238,7 +265,7 @@ fn render_address_details_tab(
                 chrono::DateTime::from_timestamp(details.last_activity as i64, 0)
                     .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
                     .unwrap_or_else(|| "Unknown".to_string()),
-                theme.normal()
+                theme.normal(),
             ),
         ]),
         Line::from(""),
@@ -282,77 +309,139 @@ fn render_address_transactions_tab(
 ) {
     // Header
     let header = Row::new(vec![
-        Cell::from(Span::styled("Transaction Hash", theme.label())),
-        Cell::from(Span::styled("Method", theme.label())),
-        Cell::from(Span::styled("Block", theme.label())),
-        Cell::from(Span::styled("Age", theme.label())),
-        Cell::from(Span::styled("From", theme.label())),
-        Cell::from(Span::styled("To", theme.label())),
-        Cell::from(Span::styled("Amount", theme.label())),
-    ]).style(Style::default().add_modifier(Modifier::BOLD));
+        Cell::from(Span::styled(
+            "Transaction Hash",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "Method",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "Block",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "Age",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "From",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "To",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "Amount",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+    ])
+    .style(Style::default().add_modifier(Modifier::BOLD));
 
     // Rows
-    let rows = transactions.iter().map(|tx| {
-        let row_style = match tx.status {
-            crate::ui::models::TransactionStatus::Success => theme.success(),
-            crate::ui::models::TransactionStatus::Failed => theme.error(),
-            crate::ui::models::TransactionStatus::Pending => theme.warning(),
-        };
-        let age = chrono::DateTime::from_timestamp(tx.timestamp as i64, 0)
-            .map(|dt| {
-                let now = chrono::Utc::now();
-                let dur = now.signed_duration_since(dt);
-                if dur.num_days() > 0 { format!("{}d ago", dur.num_days()) }
-                else if dur.num_hours() > 0 { format!("{}h ago", dur.num_hours()) }
-                else if dur.num_minutes() > 0 { format!("{}m ago", dur.num_minutes()) }
-                else { format!("{}s ago", dur.num_seconds()) }
-            })
-            .unwrap_or_else(|| "—".to_string());
+    let rows: Vec<Row> = transactions
+        .iter()
+        .enumerate()
+        .map(|(idx, tx)| {
+            let is_selected = idx == selected_index;
+            let row_style = if is_selected {
+                theme.selected()
+            } else {
+                match tx.status {
+                    crate::ui::models::TransactionStatus::Success => theme.success(),
+                    crate::ui::models::TransactionStatus::Failed => theme.error(),
+                    crate::ui::models::TransactionStatus::Pending => theme.warning(),
+                }
+            };
 
-        // Simplify method to only the function name (e.g., "register" from "register(string,address)")
-        let method_display = if tx.method.is_empty() {
-            tx.tx_type.clone()
-        } else {
-            let m = tx.method.trim();
-            let name = m.split('(').next().unwrap_or(m);
-            name.to_string()
-        };
+            let age = chrono::DateTime::from_timestamp(tx.timestamp as i64, 0)
+                .map(|dt| {
+                    let now = chrono::Utc::now();
+                    let dur = now.signed_duration_since(dt);
+                    if dur.num_days() > 0 {
+                        format!("{}d ago", dur.num_days())
+                    } else if dur.num_hours() > 0 {
+                        format!("{}h ago", dur.num_hours())
+                    } else if dur.num_minutes() > 0 {
+                        format!("{}m ago", dur.num_minutes())
+                    } else {
+                        format!("{}s ago", dur.num_seconds())
+                    }
+                })
+                .unwrap_or_else(|| "—".to_string());
 
-        Row::new(vec![
-            Cell::from(Span::styled(format!("{:.10}...", tx.tx_hash), theme.normal())),
-            Cell::from(Span::styled(method_display, theme.normal())),
-            Cell::from(Span::styled(tx.block.to_string(), theme.normal())),
-            Cell::from(Span::styled(age, theme.muted())),
-            Cell::from(Span::styled(format!("{:.10}...", tx.from), theme.normal())),
-            Cell::from(Span::styled(format!("{:.10}...", tx.to), theme.normal())),
-            Cell::from(Span::styled(format!("{:.4} ETH", tx.value), theme.warning())),
-        ]).style(row_style)
-    });
+            // Simplify method to only the function name
+            let method_display = if tx.method.is_empty() {
+                tx.tx_type.clone()
+            } else {
+                let m = tx.method.trim();
+                let name = m.split('(').next().unwrap_or(m);
+                name.to_string()
+            };
+
+            // Make transaction hash and addresses clickable (use primary color)
+            let hash_style = if is_selected {
+                theme.selected()
+            } else {
+                theme.primary().add_modifier(Modifier::UNDERLINED)
+            };
+
+            let address_style = if is_selected {
+                theme.selected()
+            } else {
+                theme.info().add_modifier(Modifier::UNDERLINED)
+            };
+
+            Row::new(vec![
+                Cell::from(Span::styled(format!("{:.10}...", tx.tx_hash), hash_style)),
+                Cell::from(Span::styled(method_display, row_style)),
+                Cell::from(Span::styled(tx.block.to_string(), row_style)),
+                Cell::from(Span::styled(age, theme.muted())),
+                Cell::from(Span::styled(format!("{:.10}...", tx.from), address_style)),
+                Cell::from(Span::styled(format!("{:.10}...", tx.to), address_style)),
+                Cell::from(Span::styled(
+                    format!("{:.4} ETH", tx.value),
+                    theme.warning(),
+                )),
+            ])
+            .style(row_style)
+        })
+        .collect();
 
     let table = Table::new(
         rows,
         [
-            Constraint::Length(18), // hash
-            Constraint::Length(14), // method
-            Constraint::Length(10), // block
-            Constraint::Length(10), // age
+            Constraint::Length(18),     // hash
+            Constraint::Length(14),     // method
+            Constraint::Length(10),     // block
+            Constraint::Length(10),     // age
             Constraint::Percentage(20), // from
             Constraint::Percentage(20), // to
-            Constraint::Length(14), // amount
+            Constraint::Length(14),     // amount
         ],
     )
     .header(header)
     .block(
         Block::default()
-            .title("Transactions")
+            .title("Transactions (Press Enter on row to view details, click addresses to navigate)")
             .borders(Borders::ALL)
             .border_style(theme.border()),
     )
     .column_spacing(1)
+    .widths([
+        Constraint::Length(18),
+        Constraint::Length(14),
+        Constraint::Length(10),
+        Constraint::Length(10),
+        Constraint::Percentage(20),
+        Constraint::Percentage(20),
+        Constraint::Length(14),
+    ])
     .highlight_style(theme.selected());
 
     let mut state = TableState::default();
-    // Select current row
     state.select(Some(selected_index));
     frame.render_stateful_widget(table, area, &mut state);
 }
@@ -362,33 +451,96 @@ fn render_address_history_tab(
     frame: &mut Frame,
     area: ratatui::layout::Rect,
     history: &[crate::ui::models::AccountHistoryEntry],
+    selected_index: usize,
     theme: &Theme,
 ) {
-    let items: Vec<ListItem> = history
+    let header = Row::new(vec![
+        Cell::from(Span::styled(
+            "Age",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "Action",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "From",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "To",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "Transaction",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+    ])
+    .style(Style::default().add_modifier(Modifier::BOLD));
+
+    let rows: Vec<Row> = history
         .iter()
-        .map(|entry| {
-            ListItem::new(Line::from(vec![
-                Span::styled(&entry.age, theme.muted()),
-                Span::raw(" | "),
-                Span::styled(&entry.action, theme.label()),
-                Span::raw(" | "),
-                Span::styled(format!("{:.10}...", entry.from), theme.normal()),
-                Span::raw(" → "),
-                Span::styled(format!("{:.10}...", entry.to), theme.normal()),
-            ]))
+        .enumerate()
+        .map(|(idx, entry)| {
+            let is_selected = idx == selected_index;
+            let row_style = if is_selected {
+                theme.selected()
+            } else {
+                theme.normal()
+            };
+
+            let address_style = if is_selected {
+                theme.selected()
+            } else {
+                theme.info().add_modifier(Modifier::UNDERLINED)
+            };
+
+            let hash_style = if is_selected {
+                theme.selected()
+            } else {
+                theme.primary().add_modifier(Modifier::UNDERLINED)
+            };
+
+            Row::new(vec![
+                Cell::from(Span::styled(&entry.age, theme.muted())),
+                Cell::from(Span::styled(&entry.action, row_style)),
+                Cell::from(Span::styled(
+                    format!("{:.10}...", entry.from),
+                    address_style,
+                )),
+                Cell::from(Span::styled(format!("{:.10}...", entry.to), address_style)),
+                Cell::from(Span::styled(
+                    format!("{:.10}...", entry.tx_hash),
+                    hash_style,
+                )),
+            ])
+            .style(row_style)
         })
         .collect();
 
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .title("Account History (Age | Action | From → To)")
-                .borders(Borders::ALL)
-                .border_style(theme.border()),
-        )
-        .style(theme.normal());
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(12), // age
+            Constraint::Length(15), // action
+            Constraint::Percentage(25), // from
+            Constraint::Percentage(25), // to
+            Constraint::Percentage(23), // transaction
+        ],
+    )
+    .header(header)
+    .block(
+        Block::default()
+            .title("Account History (Press Enter on row to view transaction, click addresses to navigate)")
+            .borders(Borders::ALL)
+            .border_style(theme.border()),
+    )
+    .column_spacing(1)
+    .highlight_style(theme.selected());
 
-    frame.render_widget(list, area);
+    let mut state = TableState::default();
+    state.select(Some(selected_index));
+    frame.render_stateful_widget(table, area, &mut state);
 }
 
 /// Render the Token Transfers tab
@@ -396,40 +548,114 @@ fn render_token_transfers_tab(
     frame: &mut Frame,
     area: ratatui::layout::Rect,
     transfers: &[crate::ui::models::TokenTransfer],
+    selected_index: usize,
     theme: &Theme,
 ) {
-    let items: Vec<ListItem> = transfers
+    let header = Row::new(vec![
+        Cell::from(Span::styled(
+            "Token ID",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "Transaction",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "From",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "To",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "Token",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "Amount",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+    ])
+    .style(Style::default().add_modifier(Modifier::BOLD));
+
+    let rows: Vec<Row> = transfers
         .iter()
-        .map(|transfer| {
-            let token_id_text = transfer.token_id
+        .enumerate()
+        .map(|(idx, transfer)| {
+            let is_selected = idx == selected_index;
+            let row_style = if is_selected {
+                theme.selected()
+            } else {
+                theme.normal()
+            };
+
+            let token_id_text = transfer
+                .token_id
                 .as_ref()
                 .map(|id| format!("#{}", id))
                 .unwrap_or_else(|| "N/A".to_string());
 
-            ListItem::new(Line::from(vec![
-                Span::styled(token_id_text, theme.info()),
-                Span::raw(" | "),
-                Span::styled(format!("{:.10}...", transfer.txn_hash), theme.normal()),
-                Span::raw(" | "),
-                Span::styled(format!("{:.8}...", transfer.from), theme.normal()),
-                Span::raw(" → "),
-                Span::styled(format!("{:.8}...", transfer.to), theme.normal()),
-                Span::raw(" | "),
-                Span::styled(format!("{} {}", transfer.amount, transfer.token_symbol), theme.warning()),
-            ]))
+            let address_style = if is_selected {
+                theme.selected()
+            } else {
+                theme.info().add_modifier(Modifier::UNDERLINED)
+            };
+
+            let hash_style = if is_selected {
+                theme.selected()
+            } else {
+                theme.primary().add_modifier(Modifier::UNDERLINED)
+            };
+
+            Row::new(vec![
+                Cell::from(Span::styled(token_id_text, theme.info())),
+                Cell::from(Span::styled(
+                    format!("{:.10}...", transfer.txn_hash),
+                    hash_style,
+                )),
+                Cell::from(Span::styled(
+                    format!("{:.10}...", transfer.from),
+                    address_style,
+                )),
+                Cell::from(Span::styled(
+                    format!("{:.10}...", transfer.to),
+                    address_style,
+                )),
+                Cell::from(Span::styled(&transfer.token_symbol, row_style)),
+                Cell::from(Span::styled(
+                    format!("{:.4}", transfer.amount),
+                    theme.warning(),
+                )),
+            ])
+            .style(row_style)
         })
         .collect();
 
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .title("Token Transfers (Token ID | Txn Hash | From → To | Amount)")
-                .borders(Borders::ALL)
-                .border_style(theme.border()),
-        )
-        .style(theme.normal());
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(12), // token id
+            Constraint::Length(18), // transaction
+            Constraint::Percentage(20), // from
+            Constraint::Percentage(20), // to
+            Constraint::Length(10), // token symbol
+            Constraint::Length(15), // amount
+        ],
+    )
+    .header(header)
+    .block(
+        Block::default()
+            .title("Token Transfers (Press Enter on row to view transaction, click addresses to navigate)")
+            .borders(Borders::ALL)
+            .border_style(theme.border()),
+    )
+    .column_spacing(1)
+    .highlight_style(theme.selected());
 
-    frame.render_widget(list, area);
+    let mut state = TableState::default();
+    state.select(Some(selected_index));
+    frame.render_stateful_widget(table, area, &mut state);
 }
 
 /// Render the Tokens tab
@@ -439,7 +665,35 @@ fn render_tokens_tab(
     tokens: &[crate::ui::models::TokenInfo],
     theme: &Theme,
 ) {
-    let items: Vec<ListItem> = tokens
+    let header = Row::new(vec![
+        Cell::from(Span::styled(
+            "Symbol",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "Name",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "Type",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "Contract",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "Balance",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "Value USD",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+    ])
+    .style(Style::default().add_modifier(Modifier::BOLD));
+
+    let rows: Vec<Row> = tokens
         .iter()
         .map(|token| {
             let token_type_text = match &token.token_type {
@@ -449,30 +703,49 @@ fn render_tokens_tab(
                 crate::ui::models::TokenType::Other(name) => name,
             };
 
-            ListItem::new(Line::from(vec![
-                Span::styled(&token.symbol, theme.primary()),
-                Span::raw(" | "),
-                Span::styled(&token.name, theme.normal()),
-                Span::raw(" | "),
-                Span::styled(token_type_text, theme.label()),
-                Span::raw(" | "),
-                Span::styled(format!("{:.4}", token.balance), theme.warning()),
-                Span::raw(" | "),
-                Span::styled(format!("${:.2}", token.value_usd), theme.success()),
-            ]))
+            let address_style = theme.info().add_modifier(Modifier::UNDERLINED);
+
+            Row::new(vec![
+                Cell::from(Span::styled(&token.symbol, theme.primary())),
+                Cell::from(Span::styled(&token.name, theme.normal())),
+                Cell::from(Span::styled(token_type_text, theme.label())),
+                Cell::from(Span::styled(
+                    format!("{:.10}...", token.contract_address),
+                    address_style,
+                )),
+                Cell::from(Span::styled(
+                    format!("{:.4}", token.balance),
+                    theme.warning(),
+                )),
+                Cell::from(Span::styled(
+                    format!("${:.2}", token.value_usd),
+                    theme.success(),
+                )),
+            ])
         })
         .collect();
 
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .title("Tokens (Symbol | Name | Type | Balance | Value USD)")
-                .borders(Borders::ALL)
-                .border_style(theme.border()),
-        )
-        .style(theme.normal());
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(10), // symbol
+            Constraint::Length(20), // name
+            Constraint::Length(12), // type
+            Constraint::Length(18), // contract
+            Constraint::Length(15), // balance
+            Constraint::Length(12), // value
+        ],
+    )
+    .header(header)
+    .block(
+        Block::default()
+            .title("Tokens (Click contract address to view details)")
+            .borders(Borders::ALL)
+            .border_style(theme.border()),
+    )
+    .column_spacing(1);
 
-    frame.render_widget(list, area);
+    frame.render_widget(table, area);
 }
 
 /// Render the Internal Transactions tab
@@ -482,33 +755,76 @@ fn render_internal_txns_tab(
     internal_txns: &[crate::ui::models::InternalTransaction],
     theme: &Theme,
 ) {
-    let items: Vec<ListItem> = internal_txns
+    let header = Row::new(vec![
+        Cell::from(Span::styled(
+            "Parent Tx",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "Type",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "Block",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "From",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "To",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "Value",
+            theme.label().add_modifier(Modifier::BOLD),
+        )),
+    ])
+    .style(Style::default().add_modifier(Modifier::BOLD));
+
+    let rows: Vec<Row> = internal_txns
         .iter()
         .map(|tx| {
-            ListItem::new(Line::from(vec![
-                Span::styled(format!("{:.10}...", tx.parent_tx_hash), theme.muted()),
-                Span::raw(" | "),
-                Span::styled(&tx.tx_type, theme.label()),
-                Span::raw(" | "),
-                Span::styled(tx.block.to_string(), theme.normal()),
-                Span::raw(" | "),
-                Span::styled(format!("{:.8}...", tx.from), theme.normal()),
-                Span::raw(" → "),
-                Span::styled(format!("{:.8}...", tx.to), theme.normal()),
-                Span::raw(" | "),
-                Span::styled(format!("{:.4} ETH", tx.value), theme.warning()),
-            ]))
+            let address_style = theme.info().add_modifier(Modifier::UNDERLINED);
+            let hash_style = theme.primary().add_modifier(Modifier::UNDERLINED);
+
+            Row::new(vec![
+                Cell::from(Span::styled(
+                    format!("{:.10}...", tx.parent_tx_hash),
+                    hash_style,
+                )),
+                Cell::from(Span::styled(&tx.tx_type, theme.label())),
+                Cell::from(Span::styled(tx.block.to_string(), theme.normal())),
+                Cell::from(Span::styled(format!("{:.10}...", tx.from), address_style)),
+                Cell::from(Span::styled(format!("{:.10}...", tx.to), address_style)),
+                Cell::from(Span::styled(
+                    format!("{:.4} ETH", tx.value),
+                    theme.warning(),
+                )),
+            ])
         })
         .collect();
 
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .title("Internal Txns (Parent Tx | Hash | Type | Block | From → To | Value In/Out)")
-                .borders(Borders::ALL)
-                .border_style(theme.border()),
-        )
-        .style(theme.normal());
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(18),     // parent tx
+            Constraint::Length(12),     // type
+            Constraint::Length(10),     // block
+            Constraint::Percentage(25), // from
+            Constraint::Percentage(25), // to
+            Constraint::Length(14),     // value
+        ],
+    )
+    .header(header)
+    .block(
+        Block::default()
+            .title("Internal Transactions (Click addresses or transactions to navigate)")
+            .borders(Borders::ALL)
+            .border_style(theme.border()),
+    )
+    .column_spacing(1);
 
-    frame.render_widget(list, area);
+    frame.render_widget(table, area);
 }

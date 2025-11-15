@@ -1,11 +1,8 @@
-use crate::{
-    blockchain::BlockchainService,
-    cache::CacheManager,
-    config::Config,
-    wallet::WalletManager,
-};
-use super::super::models::{DashboardData, CompleteAddressData};
+use super::super::models::{CompleteAddressData, DashboardData};
 use super::state::{AppState, InputMode};
+use crate::{
+    blockchain::BlockchainService, cache::CacheManager, config::Config, wallet::WalletManager,
+};
 use ratatui::layout::Rect;
 use std::collections::HashMap;
 use tokio::sync::mpsc;

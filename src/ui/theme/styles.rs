@@ -1,7 +1,7 @@
 //! Style definitions and methods for themes
 
-use ratatui::style::{Modifier, Style};
 use super::colors::Theme;
+use ratatui::style::{Modifier, Style};
 
 impl Theme {
     /// Get style for normal text
@@ -97,16 +97,12 @@ impl Theme {
 
     /// Get style for input fields
     pub fn input(&self) -> Style {
-        Style::default()
-            .fg(self.foreground)
-            .bg(self.background)
+        Style::default().fg(self.foreground).bg(self.background)
     }
 
     /// Get style for active input fields
     pub fn input_active(&self) -> Style {
-        Style::default()
-            .fg(self.background)
-            .bg(self.primary)
+        Style::default().fg(self.background).bg(self.primary)
     }
 
     /// Get style for buttons
@@ -139,9 +135,7 @@ impl Theme {
 
     /// Get style for status bar
     pub fn status_bar(&self) -> Style {
-        Style::default()
-            .fg(self.foreground)
-            .bg(self.muted)
+        Style::default().fg(self.foreground).bg(self.muted)
     }
 
     /// Get style for help text
@@ -205,15 +199,11 @@ impl Theme {
 
     /// Get style for progress bars
     pub fn progress(&self) -> Style {
-        Style::default()
-            .fg(self.background)
-            .bg(self.primary)
+        Style::default().fg(self.background).bg(self.primary)
     }
 
     /// Get style for progress bar background
     pub fn progress_bg(&self) -> Style {
-        Style::default()
-            .fg(self.muted)
-            .bg(self.background)
+        Style::default().fg(self.muted).bg(self.background)
     }
 }

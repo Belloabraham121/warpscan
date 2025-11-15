@@ -2,12 +2,12 @@
 //!
 //! This module contains the status bar component.
 
+use crate::ui::theme::Theme;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     widgets::Paragraph,
     Frame,
 };
-use crate::ui::theme::Theme;
 
 /// Render status bar
 pub fn render_status_bar(

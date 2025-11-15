@@ -77,18 +77,18 @@ impl Theme {
     /// Create a custom theme with Ethereum-inspired colors
     pub fn ethereum() -> Self {
         Self {
-            primary: Color::Rgb(98, 126, 234), // Ethereum blue
-            secondary: Color::Rgb(255, 255, 255), // White
-            accent: Color::Rgb(255, 193, 7), // Gold/yellow
-            background: Color::Rgb(32, 33, 36), // Dark gray
+            primary: Color::Rgb(98, 126, 234),     // Ethereum blue
+            secondary: Color::Rgb(255, 255, 255),  // White
+            accent: Color::Rgb(255, 193, 7),       // Gold/yellow
+            background: Color::Rgb(32, 33, 36),    // Dark gray
             foreground: Color::Rgb(255, 255, 255), // White
-            success: Color::Rgb(76, 175, 80), // Green
-            warning: Color::Rgb(255, 152, 0), // Orange
-            error: Color::Rgb(244, 67, 54), // Red
-            info: Color::Rgb(33, 150, 243), // Light blue
-            muted: Color::Rgb(158, 158, 158), // Gray
-            border: Color::Rgb(66, 66, 66), // Dark gray
-            selected: Color::Rgb(144, 202, 249), // Light blue
+            success: Color::Rgb(76, 175, 80),      // Green
+            warning: Color::Rgb(255, 152, 0),      // Orange
+            error: Color::Rgb(244, 67, 54),        // Red
+            info: Color::Rgb(33, 150, 243),        // Light blue
+            muted: Color::Rgb(158, 158, 158),      // Gray
+            border: Color::Rgb(66, 66, 66),        // Dark gray
+            selected: Color::Rgb(144, 202, 249),   // Light blue
         }
     }
 }

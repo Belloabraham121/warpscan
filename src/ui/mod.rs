@@ -12,7 +12,7 @@ pub mod theme;
 
 pub use app::{App, AppState, InputMode};
 pub use events::{Event, EventHandler};
-pub use theme::{Theme, ThemeManager};
+pub use theme::Theme;
 
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},

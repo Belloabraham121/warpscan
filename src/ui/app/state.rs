@@ -13,6 +13,7 @@ pub enum AppState {
     WalletManager,
     MultisigWallet,
     EventMonitor,
+    Settings,
     Help,
     Quit,
 }
@@ -40,6 +41,7 @@ impl AppState {
             AppState::WalletManager => "Wallet Manager",
             AppState::MultisigWallet => "Multi-Signature Wallet",
             AppState::EventMonitor => "Event Monitor",
+            AppState::Settings => "Settings",
             AppState::Help => "Help",
             AppState::Quit => "Quit",
         }

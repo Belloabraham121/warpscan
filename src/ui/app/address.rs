@@ -1,5 +1,7 @@
 use super::core::App;
 use super::super::models::{AddressDetails, AddressType, AddressTab, CompleteAddressData};
+use crate::blockchain::types::AddressTx as ServiceAddressTx;
+use crate::blockchain::types::TransactionStatus as ChainTransactionStatus;
 
 impl App {
     /// Lookup address information and populate address_data
@@ -46,14 +48,42 @@ impl App {
                 };
 
                 // Create complete address data with empty collections for now
+                // Fetch transactions via service
+                let txs: Vec<ServiceAddressTx> = match self.blockchain_client.get_address_transactions(address).await {
+                    Ok(txs) => txs,
+                    Err(_) => Vec::new(),
+                };
+
+                // Map to UI model
+                let ui_txs: Vec<super::super::models::AddressTransaction> = txs.into_iter().map(|t| {
+                    super::super::models::AddressTransaction {
+                        tx_hash: t.tx_hash,
+                        tx_type: if t.method.is_empty() { "Transfer".to_string() } else { "Contract Call".to_string() },
+                        method: t.method,
+                        block: t.block_number,
+                        from: t.from,
+                        to: t.to,
+                        value: t.value_eth,
+                        fee: t.fee_eth,
+                        timestamp: t.timestamp,
+                        status: match t.status {
+                            ChainTransactionStatus::Pending => super::super::models::TransactionStatus::Pending,
+                            ChainTransactionStatus::Success => super::super::models::TransactionStatus::Success,
+                            ChainTransactionStatus::Failed => super::super::models::TransactionStatus::Failed,
+                            ChainTransactionStatus::Unknown => super::super::models::TransactionStatus::Pending,
+                        },
+                    }
+                }).collect();
+
                 let complete_data = CompleteAddressData {
                     details,
-                    transactions: Vec::new(), // TODO: Fetch transaction history
-                    account_history: Vec::new(), // TODO: Fetch account history
-                    token_transfers: Vec::new(), // TODO: Fetch token transfers
-                    tokens: Vec::new(), // TODO: Fetch token holdings
-                    internal_transactions: Vec::new(), // TODO: Fetch internal transactions
-                    current_tab: AddressTab::Details,
+                    transactions: ui_txs,
+                    account_history: Vec::new(),
+                    token_transfers: Vec::new(),
+                    tokens: Vec::new(),
+                    internal_transactions: Vec::new(),
+                    current_tab: AddressTab::Transactions,
+                    selected_transaction_index: 0,
                 };
 
                 self.address_data = Some(complete_data);
@@ -79,5 +109,26 @@ impl App {
     /// Get the current address tab
     pub fn get_current_address_tab(&self) -> Option<AddressTab> {
         self.address_data.as_ref().map(|data| data.current_tab.clone())
+    }
+
+    /// Move selection to previous transaction in the Transactions tab
+    pub fn address_select_previous_transaction(&mut self) {
+        if let Some(ref mut data) = self.address_data {
+            if !data.transactions.is_empty() && data.selected_transaction_index > 0 {
+                data.selected_transaction_index -= 1;
+            }
+        }
+    }
+
+    /// Move selection to next transaction in the Transactions tab
+    pub fn address_select_next_transaction(&mut self) {
+        if let Some(ref mut data) = self.address_data {
+            if !data.transactions.is_empty() {
+                let max_index = data.transactions.len().saturating_sub(1);
+                if data.selected_transaction_index < max_index {
+                    data.selected_transaction_index += 1;
+                }
+            }
+        }
     }
 }

@@ -136,6 +136,7 @@ pub struct CompleteAddressData {
     pub tokens: Vec<super::TokenInfo>,
     pub internal_transactions: Vec<super::InternalTransaction>,
     pub current_tab: AddressTab,
+    pub selected_transaction_index: usize,
 }
 
 /// Address detail tabs

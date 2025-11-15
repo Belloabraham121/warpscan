@@ -120,6 +120,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                 AppState::AddressLookup => screens::render_address_lookup(frame, app, theme),
                 AppState::GasTracker => screens::render_gas_tracker(frame, app, theme),
                 AppState::WalletManager => screens::render_wallet_manager(frame, app, theme),
+                AppState::Settings => screens::render_settings(frame, app, theme),
                 _ => {
                     // For unimplemented screens, show a placeholder
                     let placeholder = ratatui::widgets::Paragraph::new("Screen not yet implemented")
@@ -185,15 +186,6 @@ async fn handle_key_event(app: &mut App, key_code: KeyCode) -> Result<bool> {
 async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<bool> {
     match key_code {
         KeyCode::Char('q') => return Ok(true), // Quit
-        KeyCode::Esc => {
-            // Escape key - go back to previous screen or home
-            if app.state == AppState::Home {
-                // If already at home, quit the application
-                return Ok(true);
-            } else {
-                app.go_back();
-            }
-        }
         KeyCode::Char('h') => app.go_back(),
         KeyCode::Up => {
             match app.state {
@@ -240,21 +232,6 @@ async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<boo
                      app.current_tab = (app.current_tab + 1) % 3;
                      app.current_list_index = 0; // Reset selection when switching tabs
                  }
-                 AppState::AddressLookup => {
-                     // Switch between address tabs
-                     use warpscan::ui::models::AddressTab;
-                     if let Some(current_tab) = app.get_current_address_tab() {
-                         let next_tab = match current_tab {
-                             AddressTab::Details => AddressTab::Transactions,
-                             AddressTab::Transactions => AddressTab::AccountHistory,
-                             AddressTab::AccountHistory => AddressTab::TokenTransfers,
-                             AddressTab::TokenTransfers => AddressTab::Tokens,
-                             AddressTab::Tokens => AddressTab::InternalTxns,
-                             AddressTab::InternalTxns => AddressTab::Details,
-                         };
-                         app.switch_address_tab(next_tab);
-                     }
-                 }
                  _ => app.next_tab(),
              }
          }
@@ -264,21 +241,6 @@ async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<boo
                      // Switch between search bar, blocks list, and transactions list
                      app.current_tab = if app.current_tab == 0 { 2 } else { app.current_tab - 1 };
                      app.current_list_index = 0; // Reset selection when switching tabs
-                 }
-                 AppState::AddressLookup => {
-                     // Switch between address tabs in reverse
-                     use warpscan::ui::models::AddressTab;
-                     if let Some(current_tab) = app.get_current_address_tab() {
-                         let prev_tab = match current_tab {
-                             AddressTab::Details => AddressTab::InternalTxns,
-                             AddressTab::Transactions => AddressTab::Details,
-                             AddressTab::AccountHistory => AddressTab::Transactions,
-                             AddressTab::TokenTransfers => AddressTab::AccountHistory,
-                             AddressTab::Tokens => AddressTab::TokenTransfers,
-                             AddressTab::InternalTxns => AddressTab::Tokens,
-                         };
-                         app.switch_address_tab(prev_tab);
-                     }
                  }
                  _ => app.go_back(),
              }
@@ -334,6 +296,7 @@ async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<boo
         KeyCode::Char('a') => app.navigate_to(AppState::AddressLookup),
         KeyCode::Char('g') => app.navigate_to(AppState::GasTracker),
         KeyCode::Char('w') => app.navigate_to(AppState::WalletManager),
+        KeyCode::Char('c') => app.navigate_to(AppState::Settings),
         KeyCode::Char('0') => app.navigate_to(AppState::Home),
         _ => {}
     }
@@ -344,11 +307,7 @@ async fn handle_editing_mode_keys(app: &mut App, key_code: KeyCode) -> Result<bo
     match key_code {
         KeyCode::Enter => {
             // Process input and exit editing mode
-            let input_text = app.process_input();
-            if !input_text.is_empty() {
-                // Process the search input
-                process_search_input(app, &input_text).await?;
-            }
+            app.get_input();
             app.input_mode = InputMode::Normal;
         }
         KeyCode::Esc => {
@@ -371,38 +330,6 @@ async fn handle_editing_mode_keys(app: &mut App, key_code: KeyCode) -> Result<bo
         _ => {}
     }
     Ok(false)
-}
-
-async fn process_search_input(app: &mut App, input: &str) -> Result<()> {
-    let trimmed_input = input.trim();
-    
-    // Determine what type of search this is based on the input format
-    if trimmed_input.len() == 66 && trimmed_input.starts_with("0x") {
-        // Transaction hash (64 hex chars + 0x prefix)
-        app.set_input(trimmed_input.to_string());
-        app.navigate_to(AppState::TransactionViewer);
-    } else if trimmed_input.len() == 42 && trimmed_input.starts_with("0x") {
-        // Ethereum address (40 hex chars + 0x prefix)
-        app.set_input(trimmed_input.to_string());
-        app.navigate_to(AppState::AddressLookup);
-        // Trigger address lookup
-        if let Err(e) = app.lookup_address(trimmed_input).await {
-            app.set_error(format!("Failed to lookup address: {}", e));
-        }
-    } else if trimmed_input.parse::<u64>().is_ok() {
-        // Block number
-        app.set_input(trimmed_input.to_string());
-        app.navigate_to(AppState::BlockExplorer);
-    } else if trimmed_input.starts_with("0x") && trimmed_input.len() <= 66 {
-        // Could be a block hash or partial hash
-        app.set_input(trimmed_input.to_string());
-        app.navigate_to(AppState::BlockExplorer);
-    } else {
-        // Unknown format, show error
-        app.set_error(format!("Unknown search format: {}", trimmed_input));
-    }
-    
-    Ok(())
 }
 
 async fn handle_mouse_event(app: &mut App, mouse_event: MouseEvent) -> Result<bool> {
@@ -444,26 +371,21 @@ async fn handle_mouse_event(app: &mut App, mouse_event: MouseEvent) -> Result<bo
 fn handle_home_click(app: &mut App, _x: u16, y: u16) {
     // Calculate which menu item was clicked based on position
     // This is a simplified implementation - in a real app you'd calculate based on actual layout
+    // Only navigate to implemented screens
     if y >= 5 && y <= 18 { // Assuming menu items are in this range
         let item_index = (y - 5) as usize;
-        if item_index < 12 { // We have 12 menu items
-            app.current_list_index = item_index;
-            // Simulate Enter key press to navigate
-            match item_index {
-                0 => app.navigate_to(AppState::BlockExplorer),
-                1 => app.navigate_to(AppState::TransactionViewer),
-                2 => app.navigate_to(AppState::AddressLookup),
-                3 => app.navigate_to(AppState::ContractSearch),
-                4 => app.navigate_to(AppState::TokenInfo),
-                5 => app.navigate_to(AppState::GasTracker),
-                6 => app.navigate_to(AppState::ContractInteraction),
-                7 => app.navigate_to(AppState::ContractVerification),
-                8 => app.navigate_to(AppState::WalletManager),
-                9 => app.navigate_to(AppState::MultisigWallet),
-                10 => app.navigate_to(AppState::EventMonitor),
-                11 => app.navigate_to(AppState::Help),
-                _ => {}
-            }
+        // Only handle clicks for implemented screens
+        match item_index {
+            0 => app.navigate_to(AppState::BlockExplorer),
+            1 => app.navigate_to(AppState::TransactionViewer),
+            2 => app.navigate_to(AppState::AddressLookup),
+            3 => app.navigate_to(AppState::GasTracker),
+            4 => app.navigate_to(AppState::WalletManager),
+            5 => app.navigate_to(AppState::Settings),
+            // Unimplemented screens (ContractSearch, TokenInfo, ContractInteraction,
+            // ContractVerification, MultisigWallet, EventMonitor, Help) are not accessible
+            // until their render functions are implemented
+            _ => {}
         }
     }
 }

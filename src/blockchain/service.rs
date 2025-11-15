@@ -10,12 +10,15 @@ use crate::cache::{CacheManager, AddressInfo};
 use crate::config::Config;
 use crate::error::{Error, Result};
 use super::types::GasPrices;
+use super::types::AddressTx;
+use super::etherscan::{EtherscanClient, EtherscanChain};
 
 /// Blockchain service for interacting with Ethereum
 pub struct BlockchainService {
     provider: Arc<Provider<Http>>,
     cache: Arc<CacheManager>,
     config: Config,
+    etherscan: Option<EtherscanClient>,
 }
 
 impl BlockchainService {
@@ -29,10 +32,27 @@ impl BlockchainService {
         // Skip connection test during initialization to allow offline startup
         // Connection will be tested when first network call is made
         
+        // Initialize Etherscan client if API key present
+        let api_key = config.etherscan_api_key.clone().or_else(|| std::env::var("ETHERSCAN_API_KEY").ok());
+        let etherscan = api_key.map(|key| {
+            let chain = match config.network.chain_id {
+                1 => EtherscanChain::Ethereum,
+                5 => EtherscanChain::Goerli,
+                11155111 => EtherscanChain::Sepolia,
+                137 => EtherscanChain::Polygon,
+                42161 => EtherscanChain::Arbitrum,
+                10 => EtherscanChain::Optimism,
+                8453 => EtherscanChain::Base,
+                other => EtherscanChain::Custom(other),
+            };
+            EtherscanClient::new(key, chain)
+        });
+        
         Ok(Self {
             provider,
             cache,
             config,
+            etherscan,
         })
     }
     
@@ -124,6 +144,16 @@ impl BlockchainService {
 
     /// Get address balance
     pub async fn get_address_balance(&self, address: &str) -> Result<U256> {
+        // Prefer Etherscan V2 when configured
+        if let Some(ref client) = self.etherscan {
+            match client.get_address_balance(address).await {
+                Ok(bal) => return Ok(bal),
+                Err(err) => {
+                    // Fallback to provider on error
+                    tracing::warn!(target = "warpscan", "Etherscan failed for balance: {}. Falling back to provider.", err);
+                }
+            }
+        }
         let addr = Address::from_str(address)
             .map_err(|e| Error::validation(format!("Invalid address: {}", e)))?;
         
@@ -181,6 +211,22 @@ impl BlockchainService {
         self.cache.store_address_info(address.to_string(), info.clone());
         
         Ok(info)
+    }
+
+    /// Get address transactions (normal transactions)
+    pub async fn get_address_transactions(&self, address: &str) -> Result<Vec<AddressTx>> {
+        // Prefer Etherscan V2 when configured
+        if let Some(ref client) = self.etherscan {
+            match client.get_address_transactions(address).await {
+                Ok(txs) => return Ok(txs),
+                Err(err) => {
+                    tracing::warn!(target = "warpscan", "Etherscan failed for txlist: {}. Returning empty list.", err);
+                    return Ok(vec![]);
+                }
+            }
+        }
+        // Fallback: provider doesn’t offer per-address tx listing easily; return empty for now
+        Ok(vec![])
     }
 
     /// Get current gas prices

@@ -6,12 +6,60 @@
 use bip39::{Mnemonic, Language};
 use ethers::{
     signers::{LocalWallet, Signer},
-    types::{Address, Signature},
+    types::{Address, Signature, U256},
 };
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use crate::error::{Error, Result};
-use crate::models::{WalletInfo, MultisigWallet, WalletStats};
+
+/// Wallet information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WalletInfo {
+    pub address: String,
+    pub mnemonic: Option<String>,
+    pub created_at: u64,
+    pub name: Option<String>,
+}
+
+/// Wallet balance information
+#[derive(Debug, Clone)]
+pub struct WalletBalance {
+    pub eth_balance: U256,
+    pub token_balances: Vec<TokenBalance>,
+}
+
+/// Token balance information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenBalance {
+    pub contract_address: String,
+    pub symbol: String,
+    pub name: String,
+    pub balance: U256,
+    pub decimals: u8,
+}
+
+/// Multi-signature wallet information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultisigWallet {
+    pub address: String,
+    pub owners: Vec<String>,
+    pub threshold: u32,
+    pub created_at: u64,
+    pub name: Option<String>,
+}
+
+/// Transaction proposal for multi-sig wallets
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransactionProposal {
+    pub id: String,
+    pub to: String,
+    pub value: U256,
+    pub data: Vec<u8>,
+    pub signatures: Vec<String>,
+    pub executed: bool,
+    pub created_at: u64,
+}
 
 /// Wallet manager for handling wallet operations
 pub struct WalletManager {
@@ -213,7 +261,13 @@ impl WalletManager {
     }
 }
 
-
+/// Wallet statistics
+#[derive(Debug, Clone)]
+pub struct WalletStats {
+    pub total_wallets: usize,
+    pub total_multisig_wallets: usize,
+    pub wallets_with_mnemonic: usize,
+}
 
 impl Default for WalletManager {
     fn default() -> Self {

@@ -3,3 +3,4 @@ target/
 .env
 .figma/
 .trae/
+.DS_Store

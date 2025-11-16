@@ -565,7 +565,7 @@ async fn handle_mouse_event(app: &mut App, mouse_event: MouseEvent) -> Result<bo
 fn handle_home_click(app: &mut App, _x: u16, y: u16) {
     // Calculate which menu item was clicked based on position
     // This is a simplified implementation - in a real app you'd calculate based on actual layout
-    if y >= 5 && y <= 18 {
+    if (5..=18).contains(&y) {
         // Assuming menu items are in this range
         let item_index = y.saturating_sub(5) as usize;
         match item_index {
@@ -590,7 +590,7 @@ fn handle_home_click(app: &mut App, _x: u16, y: u16) {
 fn handle_input_screen_click(app: &mut App, _x: u16, y: u16) {
     // Handle clicks on input screens
     // If click is in input area, enter editing mode
-    if y >= 3 && y <= 5 {
+    if (3..=5).contains(&y) {
         // Assuming input field is in this range
         app.input_mode = InputMode::Editing;
     }
@@ -602,7 +602,7 @@ async fn handle_address_lookup_click(app: &mut App, x: u16, y: u16) -> Result<()
 
     // Check if click is on tabs (approximately y=6-8, depending on layout)
     // Tabs are at content_chunks[1] which starts after title (3) + input (3) = 6
-    if y >= 6 && y <= 8 {
+    if (6..=8).contains(&y) {
         // Calculate which tab was clicked based on x position
         // Each tab is approximately 15-20 characters wide
         let tab_width = 18;
@@ -694,11 +694,11 @@ async fn handle_address_lookup_click(app: &mut App, x: u16, y: u16) -> Result<()
                 app.navigate_to_transaction(&tx_hash).await;
             }
             // Check if click is on from address column
-            else if click_x >= 25 && click_x < 50 {
+            else if (25..50).contains(&click_x) {
                 app.navigate_to_address(&from_addr).await;
             }
             // Check if click is on to address column
-            else if click_x >= 50 && click_x < 75 {
+            else if (50..75).contains(&click_x) {
                 app.navigate_to_address(&to_addr).await;
             }
         }

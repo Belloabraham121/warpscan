@@ -71,15 +71,15 @@ impl App {
             previous_state: None,
             should_quit: false,
             input_mode: InputMode::Normal,
-            input: String::new(),
+            input: String::new(), // String::new() is already optimized
             cursor_position: 0,
             size: Rect::default(),
-            navigation_history: Vec::new(),
+            navigation_history: Vec::new(), // Empty Vec is already optimized
             current_tab: 0,
             current_list_index: 0,
             scroll_offset: 0,
-            data_cache: HashMap::new(),
-            loading_states: HashMap::new(),
+            data_cache: HashMap::new(), // Empty HashMap is already optimized
+            loading_states: HashMap::new(), // Empty HashMap is already optimized
             error_message: None,
             success_message: None,
             config,
@@ -87,7 +87,7 @@ impl App {
             cache_manager,
             wallet_manager: WalletManager::new(),
             event_sender: None,
-            dashboard_data: DashboardData::mock(),
+            dashboard_data: DashboardData::mock(), // This is the main cost, but needed for UI
             address_data: None,
             transaction_data: None,
             input_data_expanded: false,

@@ -51,6 +51,16 @@ pub struct CacheConfig {
     pub address_ttl_seconds: u64,
     /// Contract cache TTL in seconds
     pub contract_ttl_seconds: u64,
+    /// Address transactions cache TTL in seconds (long TTL - transactions don't change)
+    pub address_transactions_ttl_seconds: u64,
+    /// Token transfers cache TTL in seconds (long TTL - transfers don't change)
+    pub token_transfers_ttl_seconds: u64,
+    /// Token balances cache TTL in seconds (short TTL - balances change frequently)
+    pub token_balances_ttl_seconds: u64,
+    /// Internal transactions cache TTL in seconds (long TTL - transactions don't change)
+    pub internal_transactions_ttl_seconds: u64,
+    /// ENS names cache TTL in seconds (very long TTL - ENS names rarely change)
+    pub ens_names_ttl_seconds: u64,
 }
 
 /// UI configuration

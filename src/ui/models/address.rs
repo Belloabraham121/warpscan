@@ -148,18 +148,13 @@ pub struct CompleteAddressData {
 }
 
 /// Address detail tabs
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum AddressTab {
+    #[default]
     Details,
     Transactions,
     AccountHistory,
     TokenTransfers,
     Tokens,
     InternalTxns,
-}
-
-impl Default for AddressTab {
-    fn default() -> Self {
-        AddressTab::Details
-    }
 }

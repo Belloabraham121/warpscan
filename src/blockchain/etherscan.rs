@@ -81,7 +81,11 @@ pub struct EtherscanClient {
 impl EtherscanClient {
     /// Create a new client with the provided API key and chain
     pub fn new(api_key: String, chain: EtherscanChain) -> Self {
+        // Optimize HTTP client with connection pooling and timeouts
         let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(10)) // 10 second timeout
+            .tcp_keepalive(std::time::Duration::from_secs(60)) // Keep connections alive
+            .pool_max_idle_per_host(10) // Reuse connections
             .build()
             .expect("Failed to build HTTP client");
         Self {
@@ -227,20 +231,14 @@ impl EtherscanClient {
                     })
                     .unwrap_or_default();
 
-                // Convert values
+                // OPTIMIZE: Convert values using constant for division
+                const WEI_TO_ETH: f64 = 1_000_000_000_000_000_000.0;
                 let value_eth = U256::from_dec_str(&value_wei)
-                    .map(|wei| {
-                        // Convert wei to f64 ETH
-                        let wei_f = wei.to_string().parse::<f64>().unwrap_or(0.0);
-                        wei_f / 1_000_000_000_000_000_000.0
-                    })
+                    .map(|wei| wei.as_u128() as f64 / WEI_TO_ETH)
                     .unwrap_or(0.0);
 
                 let gas_price_eth_per_gas = U256::from_dec_str(&gas_price_wei)
-                    .map(|wei| {
-                        let wei_f = wei.to_string().parse::<f64>().unwrap_or(0.0);
-                        wei_f / 1_000_000_000_000_000_000.0
-                    })
+                    .map(|wei| wei.as_u128() as f64 / WEI_TO_ETH)
                     .unwrap_or(0.0);
                 let fee_eth = gas_price_eth_per_gas * (gas_used as f64);
 
@@ -340,8 +338,18 @@ impl EtherscanClient {
 
                 // Convert value with proper decimals
                 let value_wei = U256::from_dec_str(&value_str).ok()?;
-                let divisor = 10_u64.pow(decimals as u32) as f64;
-                let amount = value_wei.to_string().parse::<f64>().unwrap_or(0.0) / divisor;
+                // Use U256 for precise division instead of lossy float/string conversions
+                let divisor = U256::exp10(decimals as usize);
+                let amount = if divisor > U256::zero() {
+                    // Divide in U256 then convert to f64 (beware of losing large mantissa)
+                    let quotient = value_wei.checked_div(divisor).unwrap_or(U256::zero());
+                    let remainder = value_wei.checked_rem(divisor).unwrap_or(U256::zero());
+                    let quotient_f64 = quotient.as_u128() as f64;
+                    let remainder_f64 = remainder.as_u128() as f64 / divisor.as_u128() as f64;
+                    quotient_f64 + remainder_f64
+                } else {
+                    0.0
+                };
 
                 Some(TokenTransfer {
                     token_id,
@@ -430,8 +438,9 @@ impl EtherscanClient {
 
                 // Convert value from wei to ETH
                 let value_wei = U256::from_dec_str(&value_str).ok()?;
-                let value_eth = value_wei.to_string().parse::<f64>().unwrap_or(0.0)
-                    / 1_000_000_000_000_000_000.0;
+                // OPTIMIZE: Use U256 directly, avoid string conversion
+                const WEI_TO_ETH: f64 = 1_000_000_000_000_000_000.0;
+                let value_eth = value_wei.as_u128() as f64 / WEI_TO_ETH;
 
                 Some(InternalTransaction {
                     parent_tx_hash,
@@ -534,7 +543,8 @@ impl EtherscanClient {
                 // Convert balance with proper decimals
                 let balance_wei = U256::from_dec_str(&balance_str).ok()?;
                 let divisor = 10_u64.pow(decimals as u32) as f64;
-                let balance = balance_wei.to_string().parse::<f64>().unwrap_or(0.0) / divisor;
+                // OPTIMIZE: Use U256 directly, avoid string conversion
+                let balance = balance_wei.as_u128() as f64 / divisor;
 
                 Some(TokenBalance {
                     contract_address,
@@ -641,8 +651,9 @@ impl EtherscanClient {
             .unwrap_or("0x0");
         let value_wei = U256::from_str_radix(value_str.trim_start_matches("0x"), 16)
             .map_err(|e| Error::parse(format!("Failed to parse value: {}", e)))?;
-        let value =
-            value_wei.to_string().parse::<f64>().unwrap_or(0.0) / 1_000_000_000_000_000_000.0;
+        // OPTIMIZE: Use U256 directly, avoid string conversion
+        const WEI_TO_ETH: f64 = 1_000_000_000_000_000_000.0;
+        let value = value_wei.as_u128() as f64 / WEI_TO_ETH;
 
         let gas_str = result.get("gas").and_then(|v| v.as_str()).unwrap_or("0x0");
         let gas_limit = u64::from_str_radix(gas_str.trim_start_matches("0x"), 16)
@@ -657,8 +668,9 @@ impl EtherscanClient {
         let gas_price_wei = U256::from_str_radix(gas_price_str.trim_start_matches("0x"), 16)
             .map_err(|e| Error::parse(format!("Failed to parse gas price: {}", e)))?;
         // Convert to gwei (1 gwei = 10^9 wei)
-        let gas_price = gas_price_wei.to_string().parse::<f64>().unwrap_or(0.0) / 1_000_000_000.0;
-        let gas_price = gas_price as u64;
+        // OPTIMIZE: Use U256 directly, avoid string conversion
+        const GWEI_TO_ETH: f64 = 1_000_000_000.0;
+        let gas_price = (gas_price_wei.as_u128() as f64 / GWEI_TO_ETH) as u64;
 
         let nonce_str = result
             .get("nonce")

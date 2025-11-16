@@ -13,8 +13,33 @@ impl App {
         self.set_loading("address_search", true);
         self.clear_messages();
 
-        // Get basic address info from blockchain
-        match self.blockchain_client.get_address_info(address).await {
+        // PARALLELIZE: Fetch ALL data concurrently
+        // get_address_info, transactions, token transfers, token balances, internal transactions,
+        // and ENS resolution can all run in parallel since they're independent
+        let (
+            address_info_result,
+            ens_result,
+            txs_result,
+            token_transfers_result,
+            token_balances_result,
+            internal_transactions_result,
+        ) = tokio::join!(
+            // Fetch address info (balance, transaction count, contract status)
+            self.blockchain_client.get_address_info(address),
+            // Resolve ENS name (safe to call for all addresses, returns None for contracts/non-ENS)
+            self.blockchain_client.resolve_ens_name(address),
+            // Fetch transactions
+            self.blockchain_client.get_address_transactions(address),
+            // Fetch token transfers
+            self.blockchain_client.get_token_transfers(address),
+            // Fetch token balances
+            self.blockchain_client.get_token_balances(address),
+            // Fetch internal transactions
+            self.blockchain_client.get_internal_transactions(address),
+        );
+
+        // Process address info result
+        match address_info_result {
             Ok(address_info) => {
                 // Determine address type based on contract status
                 let address_type = if address_info.is_contract {
@@ -23,25 +48,18 @@ impl App {
                     AddressType::EOA
                 };
 
-                // Convert balance from string to f64 (assuming it's in wei, convert to ETH)
-                let balance_wei: Result<ethers::types::U256, _> = address_info.balance.parse();
-                let balance_eth = match balance_wei {
-                    Ok(wei) => {
-                        // Convert wei to ETH (1 ETH = 10^18 wei)
-                        let eth_value = wei.as_u128() as f64 / 1_000_000_000_000_000_000.0;
-                        eth_value
-                    }
-                    Err(_) => 0.0,
-                };
+                // OPTIMIZE: Convert balance from string to f64 (assuming it's in wei, convert to ETH)
+                // Use constant for division to avoid repeated calculation
+                const WEI_TO_ETH: f64 = 1_000_000_000_000_000_000.0;
+                let balance_eth = address_info
+                    .balance
+                    .parse::<ethers::types::U256>()
+                    .map(|wei| wei.as_u128() as f64 / WEI_TO_ETH)
+                    .unwrap_or(0.0);
 
-                // Resolve ENS name for EOA addresses
+                // Use ENS name only for EOA addresses
                 let ens_name = match address_type {
-                    AddressType::EOA => {
-                        match self.blockchain_client.resolve_ens_name(address).await {
-                            Ok(name) => name,
-                            Err(_) => None,
-                        }
-                    }
+                    AddressType::EOA => ens_result.unwrap_or(None),
                     _ => None,
                 };
 
@@ -50,7 +68,7 @@ impl App {
                     address: address.to_string(),
                     address_type,
                     balance: balance_eth,
-                    token_count: 0,                   // TODO: Implement token counting
+                    token_count: 0, // Will be updated after fetching tokens
                     estimated_net_worth: balance_eth, // For now, just use ETH balance
                     total_transactions: address_info.transaction_count,
                     outgoing_transfers: 0,  // TODO: Implement transfer counting
@@ -62,27 +80,44 @@ impl App {
                     ens_name,
                 };
 
-                // Create complete address data with empty collections for now
-                // Fetch transactions via service
-                let txs: Vec<ServiceAddressTx> = match self
-                    .blockchain_client
-                    .get_address_transactions(address)
-                    .await
-                {
-                    Ok(txs) => txs,
-                    Err(_) => Vec::new(),
-                };
+                // Process transactions
+                let txs: Vec<ServiceAddressTx> = txs_result.unwrap_or_default();
 
-                // Map to UI model
-                let ui_txs: Vec<super::super::models::AddressTransaction> = txs
-                    .iter()
-                    .map(|t| super::super::models::AddressTransaction {
+                // OPTIMIZE: Pre-compute address lowercase once to avoid repeated conversions
+                let address_lower = address.to_lowercase();
+                let now = chrono::Utc::now().timestamp() as u64;
+
+                // OPTIMIZE: Pre-allocate vectors with known capacity
+                let txs_len = txs.len();
+                let mut ui_txs = Vec::with_capacity(txs_len);
+                let mut account_history = Vec::with_capacity(txs_len);
+
+                // OPTIMIZE: Process in single pass to avoid multiple iterations
+                for t in &txs {
+                    // Map to UI transaction model
+                    let tx_type = if t.method.is_empty() {
+                        "Transfer"
+                    } else {
+                        "Contract Call"
+                    };
+                    let status = match t.status {
+                        ChainTransactionStatus::Pending => {
+                            super::super::models::TransactionStatus::Pending
+                        }
+                        ChainTransactionStatus::Success => {
+                            super::super::models::TransactionStatus::Success
+                        }
+                        ChainTransactionStatus::Failed => {
+                            super::super::models::TransactionStatus::Failed
+                        }
+                        ChainTransactionStatus::Unknown => {
+                            super::super::models::TransactionStatus::Pending
+                        }
+                    };
+
+                    ui_txs.push(super::super::models::AddressTransaction {
                         tx_hash: t.tx_hash.clone(),
-                        tx_type: if t.method.is_empty() {
-                            "Transfer".to_string()
-                        } else {
-                            "Contract Call".to_string()
-                        },
+                        tx_type: tx_type.to_string(),
                         method: t.method.clone(),
                         block: t.block_number,
                         from: t.from.clone(),
@@ -90,66 +125,49 @@ impl App {
                         value: t.value_eth,
                         fee: t.fee_eth,
                         timestamp: t.timestamp,
-                        status: match t.status {
-                            ChainTransactionStatus::Pending => {
-                                super::super::models::TransactionStatus::Pending
-                            }
-                            ChainTransactionStatus::Success => {
-                                super::super::models::TransactionStatus::Success
-                            }
-                            ChainTransactionStatus::Failed => {
-                                super::super::models::TransactionStatus::Failed
-                            }
-                            ChainTransactionStatus::Unknown => {
-                                super::super::models::TransactionStatus::Pending
-                            }
-                        },
-                    })
-                    .collect();
+                        status,
+                    });
 
-                // Convert transactions to account history entries
-                let account_history: Vec<AccountHistoryEntry> = txs
-                    .iter()
-                    .map(|t| {
-                        // Determine action based on address
-                        let action = if t.from.to_lowercase() == address.to_lowercase() {
-                            "Sent".to_string()
-                        } else if t.to.to_lowercase() == address.to_lowercase() {
-                            "Received".to_string()
-                        } else {
-                            "Unknown".to_string()
-                        };
+                    // OPTIMIZE: Determine action based on address (use pre-computed lowercase)
+                    // Pre-compute from/to lowercase once per transaction
+                    let from_lower = t.from.to_lowercase();
+                    let to_lower = t.to.to_lowercase();
+                    let action = if from_lower == address_lower {
+                        "Sent"
+                    } else if to_lower == address_lower {
+                        "Received"
+                    } else {
+                        "Unknown"
+                    };
 
-                        // Calculate age from timestamp
-                        let now = chrono::Utc::now().timestamp() as u64;
-                        let age_seconds = now.saturating_sub(t.timestamp);
-                        let age = if age_seconds < 60 {
-                            format!("{}s ago", age_seconds)
-                        } else if age_seconds < 3600 {
-                            format!("{}m ago", age_seconds / 60)
-                        } else if age_seconds < 86400 {
-                            format!("{}h ago", age_seconds / 3600)
-                        } else {
-                            format!("{}d ago", age_seconds / 86400)
-                        };
+                    // Calculate age from timestamp (use pre-computed now)
+                    let age_seconds = now.saturating_sub(t.timestamp);
+                    let age = if age_seconds < 60 {
+                        format!("{}s ago", age_seconds)
+                    } else if age_seconds < 3600 {
+                        format!("{}m ago", age_seconds / 60)
+                    } else if age_seconds < 86400 {
+                        format!("{}h ago", age_seconds / 3600)
+                    } else {
+                        format!("{}d ago", age_seconds / 86400)
+                    };
 
-                        AccountHistoryEntry {
-                            age,
-                            action,
-                            from: t.from.clone(),
-                            to: t.to.clone(),
-                            timestamp: t.timestamp,
-                            tx_hash: t.tx_hash.clone(),
-                        }
-                    })
-                    .collect();
+                    account_history.push(AccountHistoryEntry {
+                        age,
+                        action: action.to_string(),
+                        from: t.from.clone(),
+                        to: t.to.clone(),
+                        timestamp: t.timestamp,
+                        tx_hash: t.tx_hash.clone(),
+                    });
+                }
 
-                // Fetch token transfers
-                let token_transfers: Vec<TokenTransfer> =
-                    match self.blockchain_client.get_token_transfers(address).await {
-                        Ok(transfers) => transfers
-                            .into_iter()
-                            .map(|t| TokenTransfer {
+                // OPTIMIZE: Process token transfers with pre-allocated capacity
+                let token_transfers: Vec<TokenTransfer> = match token_transfers_result {
+                    Ok(transfers) => {
+                        let mut result = Vec::with_capacity(transfers.len());
+                        for t in transfers {
+                            result.push(TokenTransfer {
                                 token_id: t.token_id,
                                 txn_hash: t.txn_hash,
                                 from: t.from,
@@ -158,17 +176,19 @@ impl App {
                                 token_symbol: t.token_symbol,
                                 amount: t.amount,
                                 timestamp: t.timestamp,
-                            })
-                            .collect(),
-                        Err(_) => Vec::new(),
-                    };
+                            });
+                        }
+                        result
+                    }
+                    Err(_) => Vec::new(),
+                };
 
-                // Fetch token balances
-                let tokens: Vec<TokenInfo> =
-                    match self.blockchain_client.get_token_balances(address).await {
-                        Ok(balances) => balances
-                            .into_iter()
-                            .map(|b| TokenInfo {
+                // OPTIMIZE: Process token balances with pre-allocated capacity
+                let tokens: Vec<TokenInfo> = match token_balances_result {
+                    Ok(balances) => {
+                        let mut result = Vec::with_capacity(balances.len());
+                        for b in balances {
+                            result.push(TokenInfo {
                                 contract_address: b.contract_address,
                                 name: b.name,
                                 symbol: b.symbol,
@@ -176,36 +196,38 @@ impl App {
                                 balance: b.balance,
                                 value_usd: 0.0, // TODO: Fetch USD value from price API
                                 decimals: b.decimals,
-                            })
-                            .collect(),
-                        Err(_) => Vec::new(),
-                    };
+                            });
+                        }
+                        result
+                    }
+                    Err(_) => Vec::new(),
+                };
 
                 // Update token count in details
                 let token_count = tokens.len() as u32;
 
-                // Fetch internal transactions
-                let internal_transactions: Vec<InternalTransaction> = match self
-                    .blockchain_client
-                    .get_internal_transactions(address)
-                    .await
-                {
-                    Ok(txns) => txns
-                        .into_iter()
-                        .map(|t| InternalTransaction {
-                            parent_tx_hash: t.parent_tx_hash,
-                            block: t.block,
-                            from: t.from,
-                            to: t.to,
-                            value: t.value,
-                            gas_limit: t.gas_limit,
-                            gas_used: t.gas_used,
-                            tx_type: t.tx_type,
-                            timestamp: t.timestamp,
-                        })
-                        .collect(),
-                    Err(_) => Vec::new(),
-                };
+                // OPTIMIZE: Process internal transactions with pre-allocated capacity
+                let internal_transactions: Vec<InternalTransaction> =
+                    match internal_transactions_result {
+                        Ok(txns) => {
+                            let mut result = Vec::with_capacity(txns.len());
+                            for t in txns {
+                                result.push(InternalTransaction {
+                                    parent_tx_hash: t.parent_tx_hash,
+                                    block: t.block,
+                                    from: t.from,
+                                    to: t.to,
+                                    value: t.value,
+                                    gas_limit: t.gas_limit,
+                                    gas_used: t.gas_used,
+                                    tx_type: t.tx_type,
+                                    timestamp: t.timestamp,
+                                });
+                            }
+                            result
+                        }
+                        Err(_) => Vec::new(),
+                    };
 
                 // Update details with token count
                 let mut details = details;

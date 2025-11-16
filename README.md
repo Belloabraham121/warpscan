@@ -254,9 +254,45 @@ WarpScan follows a clean, layered architecture designed for maintainability and 
    cargo run --release
    ```
 
+### Use Etherscan and Local Anvil Mainnet Fork
+
+WarpScan can use both an Ethereum RPC node (Infura/Alchemy/custom) and the Etherscan API (optional). For development, running against a local Anvil mainnet fork is recommended.
+
+1. Etherscan (optional)
+
+- Set an environment variable `ETHERSCAN_API_KEY`. WarpScan auto-detects it.
+
+```bash
+export ETHERSCAN_API_KEY=your_key
+```
+
+2. Anvil mainnet fork (local testing)
+
+- Requires Foundry Anvil (`curl -L https://foundry.paradigm.xyz | bash`).
+- Start a fork using the helper script and an upstream mainnet RPC:
+
+```bash
+# Using Infura/Alchemy/etc. as the upstream:
+ETH_RPC_URL=https://mainnet.infura.io/v3/YOUR_PROJECT_ID \
+./scripts/anvil-mainnet-fork.sh
+```
+
+- Update your WarpScan config (`~/.warpscan/config.toml`) to point at the local fork and mark node type as `anvil` so WarpScan skips Etherscan when appropriate:
+
+```toml
+[network]
+name = "Anvil Mainnet Fork"
+rpc_url = "http://127.0.0.1:8545"
+chain_id = 1
+timeout_seconds = 30
+node_type = "anvil"
+```
+
+Optional: Pin the fork to a specific block by adding `FORK_BLOCK=21000000` before the script command.
+
 ### Development Setup
 
-For development, you can run in debug mode with additional logging:
+For development, you can run in debug mode with additional logging:\*\*\*\*
 
 ```bash
 # Run with debug logging

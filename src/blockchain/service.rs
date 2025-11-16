@@ -30,6 +30,7 @@ pub struct BlockchainService {
 impl BlockchainService {
     /// Create a new blockchain service
     pub async fn new(config: Config, cache: Arc<CacheManager>) -> Result<Self> {
+        // Create provider - this is fast, no network call
         let provider = Provider::<Http>::try_from(&config.network.rpc_url)
             .map_err(|e| Error::network(format!("Failed to create provider: {}", e)))?;
 
@@ -39,11 +40,13 @@ impl BlockchainService {
         // Connection will be tested when first network call is made
 
         // Initialize Etherscan client if API key present
-        let api_key = config
-            .etherscan_api_key
-            .clone()
-            .or_else(|| std::env::var("ETHERSCAN_API_KEY").ok());
+        // Optimize: check env var first (faster) before cloning config
+        let api_key = std::env::var("ETHERSCAN_API_KEY")
+            .ok()
+            .or_else(|| config.etherscan_api_key.clone());
+
         let etherscan = api_key.map(|key| {
+            // Use a match expression directly instead of storing in variable
             let chain = match config.network.chain_id {
                 1 => EtherscanChain::Ethereum,
                 5 => EtherscanChain::Goerli,
@@ -217,9 +220,17 @@ impl BlockchainService {
             return Ok(cached_info);
         }
 
-        let balance = self.get_address_balance(address).await?;
-        let transaction_count = self.get_address_transaction_count(address).await?;
-        let is_contract = self.is_contract(address).await?;
+        // PARALLELIZE: Fetch balance, transaction count, and contract status concurrently
+        // These calls are independent and can be done in parallel
+        let (balance_result, transaction_count_result, is_contract_result) = tokio::join!(
+            self.get_address_balance(address),
+            self.get_address_transaction_count(address),
+            self.is_contract(address),
+        );
+
+        let balance = balance_result?;
+        let transaction_count = transaction_count_result?;
+        let is_contract = is_contract_result?;
 
         let info = AddressInfo {
             address: address.to_string(),
@@ -241,10 +252,22 @@ impl BlockchainService {
 
     /// Get address transactions (normal transactions)
     pub async fn get_address_transactions(&self, address: &str) -> Result<Vec<AddressTx>> {
+        // Check cache first
+        if let Some(cached_txs) = self.cache.get_address_transactions(address) {
+            tracing::debug!(target: "warpscan", "Cache hit for address transactions: {}", address);
+            return Ok(cached_txs);
+        }
+
         // Prefer Etherscan V2 when configured
         if let Some(ref client) = self.etherscan {
             match client.get_address_transactions(address).await {
-                Ok(txs) => return Ok(txs),
+                Ok(txs) => {
+                    // Store in cache for future use
+                    self.cache
+                        .store_address_transactions(address.to_string(), txs.clone());
+                    tracing::debug!(target: "warpscan", "Cached address transactions for: {}", address);
+                    return Ok(txs);
+                }
                 Err(err) => {
                     tracing::warn!(
                         target = "warpscan",
@@ -261,9 +284,21 @@ impl BlockchainService {
 
     /// Get token transfers for an address
     pub async fn get_token_transfers(&self, address: &str) -> Result<Vec<EtherscanTokenTransfer>> {
+        // Check cache first
+        if let Some(cached_transfers) = self.cache.get_token_transfers(address) {
+            tracing::debug!(target: "warpscan", "Cache hit for token transfers: {}", address);
+            return Ok(cached_transfers);
+        }
+
         if let Some(ref client) = self.etherscan {
             match client.get_token_transfers(address).await {
-                Ok(transfers) => return Ok(transfers),
+                Ok(transfers) => {
+                    // Store in cache for future use
+                    self.cache
+                        .store_token_transfers(address.to_string(), transfers.clone());
+                    tracing::debug!(target: "warpscan", "Cached token transfers for: {}", address);
+                    return Ok(transfers);
+                }
                 Err(err) => {
                     tracing::warn!(
                         target = "warpscan",
@@ -282,9 +317,21 @@ impl BlockchainService {
         &self,
         address: &str,
     ) -> Result<Vec<EtherscanInternalTransaction>> {
+        // Check cache first
+        if let Some(cached_txns) = self.cache.get_internal_transactions(address) {
+            tracing::debug!(target: "warpscan", "Cache hit for internal transactions: {}", address);
+            return Ok(cached_txns);
+        }
+
         if let Some(ref client) = self.etherscan {
             match client.get_internal_transactions(address).await {
-                Ok(txns) => return Ok(txns),
+                Ok(txns) => {
+                    // Store in cache for future use
+                    self.cache
+                        .store_internal_transactions(address.to_string(), txns.clone());
+                    tracing::debug!(target: "warpscan", "Cached internal transactions for: {}", address);
+                    return Ok(txns);
+                }
                 Err(err) => {
                     tracing::warn!(
                         target = "warpscan",
@@ -300,9 +347,21 @@ impl BlockchainService {
 
     /// Get token balances for an address
     pub async fn get_token_balances(&self, address: &str) -> Result<Vec<EtherscanTokenBalance>> {
+        // Check cache first
+        if let Some(cached_balances) = self.cache.get_token_balances(address) {
+            tracing::debug!(target: "warpscan", "Cache hit for token balances: {}", address);
+            return Ok(cached_balances);
+        }
+
         if let Some(ref client) = self.etherscan {
             match client.get_token_balances(address).await {
-                Ok(tokens) => return Ok(tokens),
+                Ok(tokens) => {
+                    // Store in cache for future use
+                    self.cache
+                        .store_token_balances(address.to_string(), tokens.clone());
+                    tracing::debug!(target: "warpscan", "Cached token balances for: {}", address);
+                    return Ok(tokens);
+                }
                 Err(err) => {
                     tracing::warn!(
                         target = "warpscan",
@@ -383,7 +442,7 @@ impl BlockchainService {
             tx = tx.value(value);
         }
 
-        let typed_tx = TypedTransaction::Legacy(tx.into());
+        let typed_tx = TypedTransaction::Legacy(tx);
         self.provider
             .estimate_gas(&typed_tx, None)
             .await
@@ -402,18 +461,33 @@ impl BlockchainService {
             return Ok(None);
         }
 
+        // Check cache first
+        if let Some(cached_ens) = self.cache.get_ens_name(address) {
+            tracing::debug!(target: "warpscan", "Cache hit for ENS name: {}", address);
+            return Ok(cached_ens);
+        }
+
         let addr = Address::from_str(address)
             .map_err(|e| Error::validation(format!("Invalid address: {}", e)))?;
 
         // Use ethers-rs ENS resolver
-        match self.provider.lookup_address(addr).await {
+        let ens_result = match self.provider.lookup_address(addr).await {
             Ok(name) => Ok(Some(name)),
             Err(_) => {
                 // ENS resolution failed - address might not have an ENS name
                 // This is not an error, just return None
                 Ok(None)
             }
+        };
+
+        // Store in cache (even if None, to avoid repeated lookups)
+        if let Ok(ref ens_name) = ens_result {
+            self.cache
+                .store_ens_name(address.to_string(), ens_name.clone());
+            tracing::debug!(target: "warpscan", "Cached ENS name for: {}", address);
         }
+
+        ens_result
     }
 
     /// Get transaction details - tries Etherscan first, falls back to RPC (for local nodes)

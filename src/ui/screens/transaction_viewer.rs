@@ -135,11 +135,7 @@ fn render_transaction_details(
     frame.render_widget(status_block, chunks[0]);
 
     // Overview section (From, To, Value, Block)
-    let to_address = tx
-        .to
-        .as_ref()
-        .map(|s| s.as_str())
-        .unwrap_or("Contract Creation");
+    let to_address = tx.to.as_deref().unwrap_or("Contract Creation");
     let to_style = if tx.to.is_some() {
         theme.info()
     } else {
@@ -219,7 +215,7 @@ fn render_transaction_details(
         .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
         .unwrap_or_else(|| "Unknown".to_string());
 
-    let method_display = tx.method.as_ref().map(|m| m.as_str()).unwrap_or("N/A");
+    let method_display = tx.method.as_deref().unwrap_or("N/A");
 
     let details_lines = vec![
         Line::from(vec![

@@ -1,6 +1,7 @@
 //! Blockchain types and data structures
 
 use ethers::types::U256;
+use serde::Serialize;
 
 /// Gas price information
 #[derive(Debug, Clone)]
@@ -12,7 +13,7 @@ pub struct GasPrices {
 }
 
 /// Transaction status
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub enum TransactionStatus {
     Pending,
     Success,
@@ -21,7 +22,7 @@ pub enum TransactionStatus {
 }
 
 /// Simplified address transaction model used by services
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct AddressTx {
     pub tx_hash: String,
     pub method: String,

@@ -31,8 +31,9 @@ pub use transaction_viewer::render_transaction_viewer;
 pub use wallet_manager::render_wallet_manager;
 
 // Screen enum definition
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Screen {
+    #[default]
     Home,
     BlockExplorer,
     TransactionViewer,
@@ -46,10 +47,4 @@ pub enum Screen {
     MultiSigWallet,
     EventMonitor,
     Help,
-}
-
-impl Default for Screen {
-    fn default() -> Self {
-        Screen::Home
-    }
 }

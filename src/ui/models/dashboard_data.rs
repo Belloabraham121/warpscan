@@ -13,7 +13,8 @@ pub struct DashboardData {
 /// Generate mock data for development
 impl DashboardData {
     pub fn mock() -> Self {
-        let mut latest_blocks = Vec::new();
+        // Pre-allocate vectors with known capacity for better performance
+        let mut latest_blocks = Vec::with_capacity(5);
         for i in 0..5 {
             let mut block = BlockInfo::default();
             block.number = 21_234_567 - i;
@@ -22,7 +23,7 @@ impl DashboardData {
             latest_blocks.push(block);
         }
 
-        let mut latest_transactions = Vec::new();
+        let mut latest_transactions = Vec::with_capacity(5);
         for i in 0..5 {
             let mut tx = TransactionInfo::default();
             tx.hash = format!("0x{:016x}...", 0xabcdef1234567890u64 - i as u64 * 0x2222);
@@ -33,7 +34,8 @@ impl DashboardData {
             latest_transactions.push(tx);
         }
 
-        // Real daily transaction data
+        // Real daily transaction data - use array literal for better performance
+        // Pre-allocate with known capacity (30 days)
         let daily_transactions = vec![
             DailyTransactionData {
                 date: "2025-09-07".to_string(),

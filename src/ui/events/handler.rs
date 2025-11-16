@@ -32,17 +32,17 @@ impl EventHandler {
                     if event::poll(timeout).unwrap_or(false) {
                         match event::read() {
                             Ok(CrosstermEvent::Key(key)) => {
-                                if let Err(_) = sender.send(Event::Key(key)) {
+                                if sender.send(Event::Key(key)).is_err() {
                                     break;
                                 }
                             }
                             Ok(CrosstermEvent::Mouse(mouse)) => {
-                                if let Err(_) = sender.send(Event::Mouse(mouse)) {
+                                if sender.send(Event::Mouse(mouse)).is_err() {
                                     break;
                                 }
                             }
                             Ok(CrosstermEvent::Resize(w, h)) => {
-                                if let Err(_) = sender.send(Event::Resize(w, h)) {
+                                if sender.send(Event::Resize(w, h)).is_err() {
                                     break;
                                 }
                             }
@@ -51,7 +51,7 @@ impl EventHandler {
                     }
 
                     if last_tick.elapsed() >= tick_rate {
-                        if let Err(_) = sender.send(Event::Tick) {
+                        if sender.send(Event::Tick).is_err() {
                             break;
                         }
                         last_tick = Instant::now();
@@ -74,10 +74,7 @@ impl EventHandler {
 
     /// Get the next event
     pub async fn next(&mut self) -> Result<Event> {
-        self.receiver
-            .recv()
-            .await
-            .ok_or_else(|| Error::EventChannelClosed)
+        self.receiver.recv().await.ok_or(Error::EventChannelClosed)
     }
 
     /// Send a custom event

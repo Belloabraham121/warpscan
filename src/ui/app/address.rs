@@ -81,10 +81,7 @@ impl App {
                 };
 
                 // Process transactions
-                let txs: Vec<ServiceAddressTx> = match txs_result {
-                    Ok(txs) => txs,
-                    Err(_) => Vec::new(),
-                };
+                let txs: Vec<ServiceAddressTx> = txs_result.unwrap_or_default();
 
                 // OPTIMIZE: Pre-compute address lowercase once to avoid repeated conversions
                 let address_lower = address.to_lowercase();

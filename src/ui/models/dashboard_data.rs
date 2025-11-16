@@ -16,21 +16,25 @@ impl DashboardData {
         // Pre-allocate vectors with known capacity for better performance
         let mut latest_blocks = Vec::with_capacity(5);
         for i in 0..5 {
-            let mut block = BlockInfo::default();
-            block.number = 21_234_567 - i;
-            block.hash = format!("0x{:016x}...", 0x1234567890abcdef - i * 0x1111);
-            block.transaction_count = 150 - (i as u32 * 10);
+            let block = BlockInfo {
+                number: 21_234_567 - i,
+                hash: format!("0x{:016x}...", 0x1234567890abcdef - i * 0x1111),
+                transaction_count: 150 - (i as u32 * 10),
+                ..Default::default()
+            };
             latest_blocks.push(block);
         }
 
         let mut latest_transactions = Vec::with_capacity(5);
         for i in 0..5 {
-            let mut tx = TransactionInfo::default();
-            tx.hash = format!("0x{:016x}...", 0xabcdef1234567890u64 - i as u64 * 0x2222);
-            tx.value = 1.5 - (i as f64 * 0.1);
-            tx.block_number = 19000000 + i as u64;
-            tx.from = format!("0x{:016x}...", 0x1111111111111111u64 + i as u64 * 0x1000);
-            tx.to = format!("0x{:016x}...", 0x2222222222222222u64 + i as u64 * 0x1000);
+            let tx = TransactionInfo {
+                hash: format!("0x{:016x}...", 0xabcdef1234567890u64 - i as u64 * 0x2222),
+                value: 1.5 - (i as f64 * 0.1),
+                block_number: 19000000 + i as u64,
+                from: format!("0x{:016x}...", 0x1111111111111111u64 + i as u64 * 0x1000),
+                to: format!("0x{:016x}...", 0x2222222222222222u64 + i as u64 * 0x1000),
+                ..Default::default()
+            };
             latest_transactions.push(tx);
         }
 

@@ -442,7 +442,7 @@ impl BlockchainService {
             tx = tx.value(value);
         }
 
-        let typed_tx = TypedTransaction::Legacy(tx.into());
+        let typed_tx = TypedTransaction::Legacy(tx);
         self.provider
             .estimate_gas(&typed_tx, None)
             .await

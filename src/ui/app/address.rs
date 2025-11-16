@@ -51,7 +51,8 @@ impl App {
                 // OPTIMIZE: Convert balance from string to f64 (assuming it's in wei, convert to ETH)
                 // Use constant for division to avoid repeated calculation
                 const WEI_TO_ETH: f64 = 1_000_000_000_000_000_000.0;
-                let balance_eth = address_info.balance
+                let balance_eth = address_info
+                    .balance
                     .parse::<ethers::types::U256>()
                     .map(|wei| wei.as_u128() as f64 / WEI_TO_ETH)
                     .unwrap_or(0.0);

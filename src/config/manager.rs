@@ -28,12 +28,12 @@ impl Default for Config {
                 contract_ttl_seconds: 86400,
                 // Long TTL for static data (transactions don't change once confirmed)
                 address_transactions_ttl_seconds: 3600, // 1 hour
-                token_transfers_ttl_seconds: 3600,     // 1 hour
+                token_transfers_ttl_seconds: 3600,      // 1 hour
                 // Short TTL for dynamic data (balances change frequently)
-                token_balances_ttl_seconds: 300,        // 5 minutes
+                token_balances_ttl_seconds: 300,         // 5 minutes
                 internal_transactions_ttl_seconds: 3600, // 1 hour
                 // Very long TTL for ENS (rarely changes)
-                ens_names_ttl_seconds: 86400,           // 24 hours
+                ens_names_ttl_seconds: 86400, // 24 hours
             },
             ui: UiConfig {
                 theme: "dark".to_string(),

@@ -156,7 +156,10 @@ fn render_network_stats(frame: &mut Frame, area: ratatui::layout::Rect, app: &Ap
     .alignment(Alignment::Center);
     frame.render_widget(market_cap_text, stats_chunks[1]);
 
-    // Latest Block with modern styling
+    // Latest Block with network info
+    let network_name = &app.config.network.name;
+    let chain_id = app.config.network.chain_id;
+    
     let latest_block_block = Block::default()
         .title("🔗 Latest Block")
         .borders(Borders::ALL)
@@ -166,7 +169,15 @@ fn render_network_stats(frame: &mut Frame, area: ratatui::layout::Rect, app: &Ap
                 .fg(ratatui::style::Color::Cyan)
                 .add_modifier(ratatui::style::Modifier::BOLD),
         );
-    let latest_block_text = Paragraph::new(format!("#{}\n12 secs ago", stats.latest_block))
+    
+    // Show block number and network info
+    let block_info_text = if stats.latest_block > 0 {
+        format!("#{}\n{}", stats.latest_block, stats.block_time)
+    } else {
+        "Loading...".to_string()
+    };
+    
+    let latest_block_text = Paragraph::new(block_info_text)
         .style(
             ratatui::style::Style::default()
                 .fg(ratatui::style::Color::White)
@@ -175,6 +186,25 @@ fn render_network_stats(frame: &mut Frame, area: ratatui::layout::Rect, app: &Ap
         .block(latest_block_block)
         .alignment(Alignment::Center);
     frame.render_widget(latest_block_text, stats_chunks[2]);
+    
+    // Add network info below the stats (if space allows)
+    let network_info = format!("🌐 {} (Chain {})", network_name, chain_id);
+    if stats_chunks[2].height > 4 {
+        let network_para = Paragraph::new(network_info)
+            .style(
+                ratatui::style::Style::default()
+                    .fg(ratatui::style::Color::Cyan)
+                    .add_modifier(ratatui::style::Modifier::BOLD),
+            )
+            .alignment(Alignment::Center);
+        let network_area = ratatui::layout::Rect {
+            x: stats_chunks[2].x,
+            y: stats_chunks[2].y + stats_chunks[2].height - 1,
+            width: stats_chunks[2].width,
+            height: 1,
+        };
+        frame.render_widget(network_para, network_area);
+    }
 
     // Transaction History with enhanced styling
     let tx_history_block = Block::default()

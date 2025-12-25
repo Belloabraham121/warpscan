@@ -9,6 +9,7 @@ pub struct NetworkStats {
     pub transactions_count: u64,
     pub gas_price: u64,
     pub network_utilization: f64,
+    pub block_time: String,
 }
 
 impl Default for NetworkStats {
@@ -20,6 +21,7 @@ impl Default for NetworkStats {
             transactions_count: 1_234_567_890,
             gas_price: 25,
             network_utilization: 0.75,
+            block_time: "Loading...".to_string(),
         }
     }
 }

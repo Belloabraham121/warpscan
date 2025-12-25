@@ -9,4 +9,4 @@ pub mod ui_state;
 
 // Re-export all public types and the main App struct for convenience
 pub use core::App;
-pub use state::{AppState, InputMode};
+pub use state::{AppState, DataMode, InputMode, ModeSelectionState};

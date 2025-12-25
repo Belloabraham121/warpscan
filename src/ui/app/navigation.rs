@@ -7,8 +7,26 @@ impl App {
         if self.state != new_state {
             self.navigation_history.push(self.state.clone());
             self.previous_state = Some(self.state.clone());
+            let state_to_set = new_state.clone();
             self.state = new_state;
             self.reset_navigation_state();
+
+            // Auto-enter editing mode for input screens if no data exists
+            match state_to_set {
+                AppState::AddressLookup => {
+                    // If no address data exists, automatically enter editing mode
+                    if self.address_data.is_none() {
+                        self.input_mode = crate::ui::app::state::InputMode::Editing;
+                    }
+                }
+                AppState::TransactionViewer => {
+                    // If no transaction data exists, automatically enter editing mode
+                    if self.transaction_data.is_none() {
+                        self.input_mode = crate::ui::app::state::InputMode::Editing;
+                    }
+                }
+                _ => {}
+            }
         }
     }
 

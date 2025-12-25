@@ -27,7 +27,7 @@ use warpscan::{
         init_logging, init_minimal_logging, log_config_info, log_shutdown_info, log_startup_info,
     },
     ui::{
-        app::{App, AppState, InputMode},
+        app::{App, AppState, DataMode, InputMode, ModeSelectionState},
         events::{Event as AppEvent, EventHandler},
         screens,
         theme::ThemeManager,
@@ -37,8 +37,8 @@ use warpscan::{
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Load configuration first
-    let (config, config_loaded) = match Config::load() {
+    // Load configuration first with auto-detection
+    let (config, config_loaded) = match Config::load_with_auto_detect().await {
         Ok(config) => (config, true),
         Err(_) => (Config::default(), false),
     };
@@ -76,6 +76,9 @@ async fn main() -> Result<()> {
 
     // Initialize application
     let mut app = App::new(config.clone(), blockchain_client, cache_manager);
+
+    // Don't refresh dashboard until mode is selected
+    // refresh_dashboard() will be called after mode selection
 
     // Initialize event handler
     let mut event_handler = EventHandler::new(Duration::from_millis(100));
@@ -117,6 +120,12 @@ async fn run_app<B: ratatui::backend::Backend>(
         // Render UI
         let theme = theme_manager.current();
         terminal.draw(|frame| {
+            // Show mode selection first if not yet selected
+            if app.mode_selection_state == ModeSelectionState::Selecting {
+                screens::render_mode_selection(frame, app, theme);
+                return;
+            }
+
             match app.state {
                 AppState::Home => screens::render_home(frame, app, theme),
                 AppState::BlockExplorer => screens::render_block_explorer(frame, app, theme),
@@ -201,6 +210,57 @@ async fn handle_key_event(app: &mut App, key_code: KeyCode) -> Result<bool> {
 }
 
 async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<bool> {
+    // Handle mode selection first
+    if app.mode_selection_state == ModeSelectionState::Selecting {
+        match key_code {
+            KeyCode::Left | KeyCode::Char('1') => {
+                app.current_tab = 0; // Select Local Node
+            }
+            KeyCode::Right | KeyCode::Char('2') => {
+                app.current_tab = 1; // Select Etherscan
+            }
+            KeyCode::Enter => {
+                // Confirm selection
+                let selected_mode = if app.current_tab == 0 {
+                    tracing::info!(target: "warpscan", "User selected Local Node mode");
+                    DataMode::LocalNode
+                } else {
+                    tracing::info!(target: "warpscan", "User selected Etherscan mode");
+                    DataMode::Etherscan
+                };
+
+                app.data_mode = Some(selected_mode.clone());
+
+                // If Local Node selected, switch provider to local RPC directly
+                if matches!(selected_mode, DataMode::LocalNode) {
+                    if let Err(e) = app.blockchain_client.switch_to_local_node().await {
+                        tracing::error!(
+                            target: "warpscan",
+                            "Failed to switch to local node: {}. Continuing anyway...",
+                            e
+                        );
+                        // Continue anyway - user can still try
+                    } else {
+                        // Update App's config to match (for UI display)
+                        app.config.network.rpc_url = "http://127.0.0.1:8545".to_string();
+                        app.config.network.node_type = Some("anvil".to_string());
+                        app.config.network.chain_id = 31337;
+                        app.config.network.name = "Anvil Local".to_string();
+                    }
+                }
+
+                app.mode_selection_state = ModeSelectionState::Selected;
+                app.state = AppState::Home;
+                app.current_tab = 0; // Reset tab for home screen
+
+                // Refresh dashboard after mode selection (now that mode is set)
+                app.refresh_dashboard().await;
+            }
+            _ => {}
+        }
+        return Ok(false);
+    }
+
     match key_code {
         KeyCode::Char('q') => return Ok(true), // Quit
         KeyCode::Esc => {
@@ -333,6 +393,11 @@ async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<boo
                     }
                 }
                 AppState::AddressLookup => {
+                    // If already in editing mode, don't do anything (let editing mode handler take over)
+                    if app.input_mode == InputMode::Editing {
+                        return Ok(false);
+                    }
+
                     // On address lookup, Enter on selected row navigates based on tab
                     use warpscan::ui::models::AddressTab;
                     let navigation_data = app.address_data.as_ref().and_then(|address_data| {

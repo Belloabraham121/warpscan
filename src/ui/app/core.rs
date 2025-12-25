@@ -1,5 +1,5 @@
 use super::super::models::{CompleteAddressData, DashboardData};
-use super::state::{AppState, InputMode};
+use super::state::{AppState, DataMode, InputMode, ModeSelectionState};
 use crate::{
     blockchain::BlockchainService, cache::CacheManager, config::Config, wallet::WalletManager,
 };
@@ -57,6 +57,10 @@ pub struct App {
     pub transaction_data: Option<super::super::models::TransactionDetails>,
     /// Whether input data section is expanded in transaction viewer
     pub input_data_expanded: bool,
+    /// Data source mode (Local Node or Etherscan)
+    pub data_mode: Option<DataMode>,
+    /// Mode selection state
+    pub mode_selection_state: ModeSelectionState,
 }
 
 impl App {
@@ -91,6 +95,8 @@ impl App {
             address_data: None,
             transaction_data: None,
             input_data_expanded: false,
+            data_mode: None,
+            mode_selection_state: ModeSelectionState::Selecting,
         }
     }
 

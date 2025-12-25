@@ -233,7 +233,36 @@ fn render_address_details_tab(
     let left_content = Text::from(vec![
         Line::from(vec![
             Span::styled("Balance: ", theme.label()),
-            Span::styled(format!("{:.4} ETH", details.balance), theme.success()),
+            Span::styled(
+                {
+                    // Format balance with appropriate precision
+                    let balance_value = details.balance;
+                    if balance_value >= 1_000_000.0 {
+                        format!("{:.2} ETH", balance_value)
+                    } else if balance_value >= 1_000.0 {
+                        format!("{:.2} ETH", balance_value)
+                    } else if balance_value >= 1.0 {
+                        format!("{:.4} ETH", balance_value)
+                    } else {
+                        format!("{:.6} ETH", balance_value)
+                    }
+                },
+                theme.success(),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("Address Type: ", theme.label()),
+            Span::styled(
+                match details.address_type {
+                    crate::ui::models::AddressType::EOA => "EOA (Wallet)",
+                    crate::ui::models::AddressType::Contract => "Contract",
+                    crate::ui::models::AddressType::Token => "Token Contract",
+                    crate::ui::models::AddressType::MultiSig => "Multi-Sig Wallet",
+                    crate::ui::models::AddressType::Exchange => "Exchange",
+                    crate::ui::models::AddressType::Unknown => "Unknown",
+                },
+                theme.primary(),
+            ),
         ]),
         Line::from(vec![
             Span::styled("Token Count: ", theme.label()),

@@ -1,5 +1,6 @@
-use super::super::models::BlockInfo;
+use super::super::models::{BlockInfo, TransactionInfo};
 use super::core::App;
+use crate::ui::models::TransactionStatus;
 
 impl App {
     /// Set loading state for an operation
@@ -70,7 +71,8 @@ impl App {
             self.dashboard_data.network_stats.latest_block = block_number;
         }
 
-        // Fetch latest blocks
+        // Fetch latest blocks and collect transaction hashes
+        let mut all_tx_hashes = Vec::new();
         if let Ok(Some(latest_block)) = self.blockchain_client.get_latest_block().await {
             if let Some(block_number) = latest_block.number {
                 let mut blocks = Vec::new();
@@ -84,8 +86,9 @@ impl App {
                         .await
                     {
                         if let Some(num) = block.number {
+                            let block_num = num.as_u64();
                             let block_info = BlockInfo {
-                                number: num.as_u64(),
+                                number: block_num,
                                 hash: format!("{:?}", block.hash),
                                 transaction_count: block.transactions.len() as u32,
                                 timestamp: block.timestamp.as_u64(),
@@ -96,12 +99,96 @@ impl App {
                                 reward: 0.0, // Reward not available from RPC
                             };
                             blocks.push(block_info);
+
+                            // Collect transaction hashes from this block
+                            for tx_hash in &block.transactions {
+                                all_tx_hashes.push((
+                                    format!("{:?}", tx_hash),
+                                    block_num,
+                                    block.timestamp.as_u64(),
+                                ));
+                            }
                         }
                     }
                 }
                 self.dashboard_data.latest_blocks = blocks;
             }
         }
+
+        // Fetch latest transactions from the collected hashes
+        // Sort by block number (descending) and take latest 5
+        all_tx_hashes.sort_by(|a, b| b.1.cmp(&a.1));
+        all_tx_hashes.truncate(5);
+
+        let mut transactions = Vec::new();
+        for (tx_hash_str, block_num, block_timestamp) in all_tx_hashes {
+            // Fetch transaction details
+            if let Ok(Some(tx)) = self
+                .blockchain_client
+                .get_transaction_by_hash(&tx_hash_str)
+                .await
+            {
+                // Fetch transaction receipt for gas_used and status
+                let receipt_result = self
+                    .blockchain_client
+                    .get_transaction_receipt(&tx_hash_str)
+                    .await;
+
+                let (gas_used, status, gas_price_gwei) = if let Ok(Some(receipt)) = receipt_result {
+                    let gas_used_val = receipt.gas_used.map(|g| g.as_u128() as u64).unwrap_or(0);
+                    let status_val = if receipt.status == Some(1.into()) {
+                        TransactionStatus::Success
+                    } else if receipt.status == Some(0.into()) {
+                        TransactionStatus::Failed
+                    } else {
+                        TransactionStatus::Pending
+                    };
+                    let gas_price_val = receipt
+                        .effective_gas_price
+                        .map(|p| p.as_u64() / 1_000_000_000) // Convert to gwei
+                        .unwrap_or_else(|| {
+                            // Fallback to transaction gas_price if effective_gas_price not available
+                            tx.gas_price
+                                .map(|p| p.as_u64() / 1_000_000_000)
+                                .unwrap_or(0)
+                        });
+                    (gas_used_val, status_val, gas_price_val)
+                } else {
+                    // Fallback if receipt not available (pending transaction)
+                    let gas_price_val = tx
+                        .gas_price
+                        .map(|p| p.as_u64() / 1_000_000_000)
+                        .unwrap_or(0);
+                    (0, TransactionStatus::Pending, gas_price_val)
+                };
+
+                // Convert value from wei to ETH
+                const WEI_TO_ETH: f64 = 1_000_000_000_000_000_000.0;
+                let value_eth = tx.value.as_u128() as f64 / WEI_TO_ETH;
+
+                // Calculate transaction fee (gas_used * gas_price in ETH)
+                let tx_fee_eth = (gas_used as f64 * gas_price_gwei as f64) / 1_000_000_000.0;
+
+                let tx_info = TransactionInfo {
+                    hash: tx_hash_str.clone(),
+                    from: format!("{:?}", tx.from),
+                    to: tx.to.map(|a| format!("{:?}", a)).unwrap_or_default(),
+                    value: value_eth,
+                    gas_price: gas_price_gwei,
+                    gas_used,
+                    status,
+                    timestamp: block_timestamp,
+                    block_number: block_num,
+                    transaction_fee: tx_fee_eth,
+                };
+
+                transactions.push(tx_info);
+            }
+        }
+
+        // Sort transactions by block number (descending) to show most recent first
+        transactions.sort_by(|a, b| b.block_number.cmp(&a.block_number));
+        self.dashboard_data.latest_transactions = transactions;
 
         self.set_loading("dashboard_refresh", false);
     }

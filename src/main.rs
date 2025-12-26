@@ -440,9 +440,16 @@ async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<boo
         }
         KeyCode::Char('/') | KeyCode::Char('s') => {
             // Quick access to search - enter editing mode
-            if app.state == AppState::Home {
-                app.current_tab = 2; // Focus on search bar
-                app.input_mode = InputMode::Editing;
+            match app.state {
+                AppState::Home => {
+                    app.current_tab = 2; // Focus on search bar
+                    app.input_mode = InputMode::Editing;
+                }
+                AppState::AddressLookup | AppState::TransactionViewer | AppState::BlockExplorer => {
+                    // Enter editing mode for input fields on these screens
+                    app.input_mode = InputMode::Editing;
+                }
+                _ => {}
             }
         }
         KeyCode::Char('b') => {
@@ -497,6 +504,26 @@ fn is_block_number(input: &str) -> bool {
 }
 
 async fn handle_editing_mode_keys(app: &mut App, key_code: KeyCode) -> Result<bool> {
+    // Handle Tab key to exit editing mode and switch tabs on AddressLookup screen
+    if app.state == AppState::AddressLookup && key_code == KeyCode::Tab {
+        // Exit editing mode and switch to next tab
+        app.input_mode = InputMode::Normal;
+        // Switch to next address tab
+        use warpscan::ui::models::AddressTab;
+        if let Some(current) = app.get_current_address_tab() {
+            let next = match current {
+                AddressTab::Details => AddressTab::Transactions,
+                AddressTab::Transactions => AddressTab::AccountHistory,
+                AddressTab::AccountHistory => AddressTab::TokenTransfers,
+                AddressTab::TokenTransfers => AddressTab::Tokens,
+                AddressTab::Tokens => AddressTab::InternalTxns,
+                AddressTab::InternalTxns => AddressTab::Details,
+            };
+            app.switch_address_tab(next);
+        }
+        return Ok(false);
+    }
+
     match key_code {
         KeyCode::Enter => {
             // Process input based on current screen

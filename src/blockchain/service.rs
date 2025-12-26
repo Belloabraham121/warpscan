@@ -260,9 +260,9 @@ impl BlockchainService {
         let quotient = balance / divisor;
         let remainder = balance % divisor;
         let quotient_str = quotient.to_string();
-        let balance_eth_log = quotient_str.parse::<f64>().unwrap_or(0.0) 
+        let balance_eth_log = quotient_str.parse::<f64>().unwrap_or(0.0)
             + (remainder.as_u128() as f64 / 1_000_000_000_000_000_000.0);
-        
+
         tracing::info!(
             target: "warpscan",
             "Balance conversion for {}: wei={}, quotient='{}', ETH={:.6} [use_etherscan={}, is_local_node={}]",
@@ -433,9 +433,125 @@ impl BlockchainService {
         if use_etherscan {
             self.get_address_transactions(address).await
         } else {
-            // Local mode: return empty list (RPC doesn't easily support per-address tx listing)
-            Ok(vec![])
+            // Local mode: fetch transactions from blocks by scanning recent blocks
+            self.get_address_transactions_from_rpc(address).await
         }
+    }
+
+    /// Get address transactions from RPC by scanning blocks
+    /// This is used for local nodes where we need to scan blocks to find transactions
+    async fn get_address_transactions_from_rpc(&self, address: &str) -> Result<Vec<AddressTx>> {
+        use super::types::TransactionStatus;
+
+        let addr = Address::from_str(address)
+            .map_err(|e| Error::validation(format!("Invalid address: {}", e)))?;
+
+        // Get current block number
+        let latest_block = self
+            .provider
+            .get_block_number()
+            .await
+            .map_err(|e| Error::blockchain(format!("Failed to get block number: {}", e)))?;
+        let latest_block_num = latest_block.as_u64();
+
+        // For local nodes, scan the last 100 blocks (or all blocks if less than 100)
+        // This should be enough for local development
+        let start_block = latest_block_num.saturating_sub(100);
+        let mut transactions = Vec::new();
+
+        tracing::info!(
+            target: "warpscan",
+            "Scanning blocks {} to {} for transactions involving address {}",
+            start_block,
+            latest_block_num,
+            address
+        );
+
+        // Scan blocks in reverse order (newest first)
+        for block_num in (start_block..=latest_block_num).rev() {
+            if let Ok(Some(block)) = self.get_block_by_number(block_num).await {
+                // Get block timestamp
+                let block_timestamp = block.timestamp.as_u64();
+
+                // Process transaction hashes from the block
+                for tx_hash in &block.transactions {
+                    if let Ok(Some(tx)) = self
+                        .get_transaction_by_hash(&format!("{:?}", tx_hash))
+                        .await
+                    {
+                        let matches =
+                            tx.from == addr || tx.to.map(|to| to == addr).unwrap_or(false);
+
+                        if matches {
+                            // Get receipt for gas_used and status
+                            let tx_hash_str = format!("{:?}", tx.hash);
+                            let receipt_result = self.get_transaction_receipt(&tx_hash_str).await;
+
+                            let (status, fee_eth) = if let Ok(Some(receipt)) = receipt_result {
+                                let gas_used_val =
+                                    receipt.gas_used.map(|g| g.as_u128() as u64).unwrap_or(0);
+                                let status_val = if receipt.status == Some(1.into()) {
+                                    TransactionStatus::Success
+                                } else if receipt.status == Some(0.into()) {
+                                    TransactionStatus::Failed
+                                } else {
+                                    TransactionStatus::Pending
+                                };
+                                let gas_price_val = receipt
+                                    .effective_gas_price
+                                    .map(|p| p.as_u64() / 1_000_000_000)
+                                    .unwrap_or_else(|| {
+                                        tx.gas_price
+                                            .map(|p| p.as_u64() / 1_000_000_000)
+                                            .unwrap_or(0)
+                                    });
+                                let fee =
+                                    (gas_used_val as f64 * gas_price_val as f64) / 1_000_000_000.0;
+                                (status_val, fee)
+                            } else {
+                                (TransactionStatus::Pending, 0.0)
+                            };
+
+                            // Convert value from wei to ETH
+                            const WEI_TO_ETH: f64 = 1_000_000_000_000_000_000.0;
+                            let value_eth = tx.value.as_u128() as f64 / WEI_TO_ETH;
+
+                            // Extract method name from input data
+                            let method = if tx.input.len() >= 4 {
+                                // First 4 bytes (8 hex chars) are the method selector
+                                format!("0x{}", hex::encode(&tx.input[..4.min(tx.input.len())]))
+                            } else {
+                                String::new()
+                            };
+
+                            transactions.push(AddressTx {
+                                tx_hash: tx_hash_str,
+                                method,
+                                block_number: block_num,
+                                timestamp: block_timestamp,
+                                from: format!("{:?}", tx.from),
+                                to: tx.to.map(|a| format!("{:?}", a)).unwrap_or_default(),
+                                value_eth,
+                                fee_eth,
+                                status,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sort by block number descending (newest first)
+        transactions.sort_by(|a, b| b.block_number.cmp(&a.block_number));
+
+        tracing::info!(
+            target: "warpscan",
+            "Found {} transactions for address {} from RPC",
+            transactions.len(),
+            address
+        );
+
+        Ok(transactions)
     }
 
     /// Get token transfers for an address

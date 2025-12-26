@@ -43,6 +43,14 @@ pub fn render_address_lookup(frame: &mut Frame, app: &App, theme: &Theme) {
         app.input_mode == crate::ui::InputMode::Editing,
     );
 
+    // Show cursor when in editing mode
+    if app.input_mode == crate::ui::InputMode::Editing {
+        frame.set_cursor_position((
+            chunks[1].x + app.cursor_position as u16 + 1,
+            chunks[1].y + 1,
+        ));
+    }
+
     // Content area
     if let Some(ref address_data) = app.address_data {
         let content_chunks = Layout::default()

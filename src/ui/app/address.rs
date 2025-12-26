@@ -1,3 +1,5 @@
+use ethers::types::U256;
+
 use super::super::models::{
     AccountHistoryEntry, AddressDetails, AddressTab, AddressType, CompleteAddressData,
     InternalTransaction, TokenInfo, TokenTransfer, TokenType,
@@ -99,8 +101,8 @@ impl App {
                     address,
                     address_info.balance
                 );
-                
-                let balance_eth = match address_info.balance.parse::<ethers::types::U256>() {
+
+                let balance_eth = match U256::from_dec_str(&address_info.balance) {
                     Ok(wei) => {
                         tracing::info!(
                             target: "warpscan",
@@ -109,11 +111,11 @@ impl App {
                             wei,
                             wei.to_string()
                         );
-                        
+
                         // Validate: 10,000 ETH should be 10000000000000000000000 wei
                         // Let's ensure we're dividing correctly
                         let divisor = ethers::types::U256::exp10(18); // 10^18 wei = 1 ETH
-                        
+
                         // Double-check divisor is correct
                         let divisor_str = divisor.to_string();
                         tracing::info!(
@@ -121,14 +123,14 @@ impl App {
                             "Divisor (10^18): {} (should be 1000000000000000000)",
                             divisor_str
                         );
-                        
+
                         if divisor > ethers::types::U256::zero() {
                             let quotient = wei / divisor;
                             let remainder = wei % divisor;
-                            
+
                             // Convert quotient using string to avoid precision issues
                             let quotient_str = quotient.to_string();
-                            
+
                             // Log the intermediate values for debugging
                             tracing::info!(
                                 target: "warpscan",
@@ -139,7 +141,7 @@ impl App {
                                 quotient_str,
                                 remainder.to_string()
                             );
-                            
+
                             // Parse quotient string to f64
                             let quotient_f64 = quotient_str.parse::<f64>()
                                 .unwrap_or_else(|e| {
@@ -151,13 +153,13 @@ impl App {
                                     );
                                     0.0
                                 });
-                            
+
                             // Convert remainder (always < 10^18, so fits in u128)
                             let remainder_u128 = remainder.as_u128();
                             let remainder_f64 = remainder_u128 as f64 / 1_000_000_000_000_000_000.0;
-                            
+
                             let result = quotient_f64 + remainder_f64;
-                            
+
                             // Validation: if we have 10,000 ETH, result should be close to 10000
                             if result > 100_000_000.0 {
                                 tracing::error!(
@@ -167,7 +169,7 @@ impl App {
                                     result
                                 );
                             }
-                            
+
                             tracing::info!(
                                 target: "warpscan",
                                 "Final balance conversion for {}: {} wei = {} ETH (quotient={}, remainder={})",
@@ -177,7 +179,7 @@ impl App {
                                 quotient_f64,
                                 remainder_f64
                             );
-                            
+
                             result
                         } else {
                             tracing::error!(target: "warpscan", "Invalid divisor (zero) for balance conversion");

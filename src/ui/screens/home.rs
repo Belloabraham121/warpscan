@@ -247,12 +247,28 @@ fn render_latest_blocks(frame: &mut Frame, area: ratatui::layout::Rect, app: &Ap
                 ratatui::style::Style::default().fg(ratatui::style::Color::White)
             };
 
+            // Format timestamp as relative time
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let seconds_ago = now.saturating_sub(block.timestamp);
+            let time_str = if seconds_ago < 60 {
+                format!("{}s ago", seconds_ago)
+            } else if seconds_ago < 3600 {
+                format!("{}m ago", seconds_ago / 60)
+            } else if seconds_ago < 86400 {
+                format!("{}h ago", seconds_ago / 3600)
+            } else {
+                format!("{}d ago", seconds_ago / 86400)
+            };
+
             let content = format!(
                 "#{:<8} │ {:<12} │ {:>3} txns │ {}",
                 block.number,
-                &block.hash[..12],
+                &block.hash[..12.min(block.hash.len())],
                 block.transaction_count,
-                block.timestamp
+                time_str
             );
             ListItem::new(content).style(style)
         })
@@ -313,12 +329,28 @@ fn render_latest_transactions(
                 ratatui::style::Style::default().fg(ratatui::style::Color::White)
             };
 
+            // Format timestamp as relative time
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let seconds_ago = now.saturating_sub(tx.timestamp);
+            let time_str = if seconds_ago < 60 {
+                format!("{}s ago", seconds_ago)
+            } else if seconds_ago < 3600 {
+                format!("{}m ago", seconds_ago / 60)
+            } else if seconds_ago < 86400 {
+                format!("{}h ago", seconds_ago / 3600)
+            } else {
+                format!("{}d ago", seconds_ago / 86400)
+            };
+
             let content = format!(
                 "{:<14} │ {:<10} │ {:>8.4} ETH │ {}",
-                &tx.hash[..14],
-                &tx.from[..10],
+                &tx.hash[..14.min(tx.hash.len())],
+                &tx.from[..10.min(tx.from.len())],
                 tx.value,
-                tx.timestamp
+                time_str
             );
             ListItem::new(content).style(style)
         })

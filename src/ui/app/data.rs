@@ -43,6 +43,29 @@ impl App {
     /// Refresh dashboard data with real blockchain data
     pub async fn refresh_dashboard(&mut self) {
         self.set_loading("dashboard_refresh", true);
+        self.clear_messages();
+
+        // Log the current mode for debugging
+        match self.data_mode {
+            Some(crate::ui::app::state::DataMode::Etherscan) => {
+                tracing::info!(target: "warpscan", "Dashboard refresh using Etherscan mode");
+            }
+            Some(crate::ui::app::state::DataMode::LocalNode) => {
+                tracing::info!(target: "warpscan", "Dashboard refresh using Local Node mode");
+            }
+            None => {
+                // Mode not selected yet - check if local node was detected
+                let is_local = self
+                    .config
+                    .network
+                    .node_type
+                    .as_ref()
+                    .map(|t| t == "anvil" || t == "hardhat" || t == "local")
+                    .unwrap_or(false);
+                tracing::warn!(target: "warpscan", "Mode not selected! Defaulting to {} for dashboard refresh", 
+                    if is_local { "Local RPC" } else { "Etherscan" });
+            }
+        };
 
         // Fetch latest block and network stats in parallel
         let (latest_block_result, block_number_result) = tokio::join!(
@@ -65,53 +88,83 @@ impl App {
                 let seconds_ago = now.saturating_sub(timestamp);
                 self.dashboard_data.network_stats.block_time = format!("{} secs ago", seconds_ago);
             }
+        } else if let Err(e) = latest_block_result {
+            tracing::warn!(target: "warpscan", "Failed to fetch latest block: {}", e);
+            self.set_error(format!("Failed to fetch latest block: {}", e));
         }
 
         if let Ok(block_number) = block_number_result {
             self.dashboard_data.network_stats.latest_block = block_number;
+        } else if let Err(e) = block_number_result {
+            tracing::warn!(target: "warpscan", "Failed to fetch block number: {}", e);
         }
 
         // Fetch latest blocks and collect transaction hashes
         let mut all_tx_hashes = Vec::new();
-        if let Ok(Some(latest_block)) = self.blockchain_client.get_latest_block().await {
-            if let Some(block_number) = latest_block.number {
-                let mut blocks = Vec::new();
-                let start_block = block_number.as_u64();
+        match self.blockchain_client.get_latest_block().await {
+            Ok(Some(latest_block)) => {
+                if let Some(block_number) = latest_block.number {
+                    let mut blocks = Vec::new();
+                    let start_block = block_number.as_u64();
 
-                // Fetch last 5 blocks
-                for i in 0..5 {
-                    if let Ok(Some(block)) = self
-                        .blockchain_client
-                        .get_block_by_number(start_block.saturating_sub(i))
-                        .await
-                    {
-                        if let Some(num) = block.number {
-                            let block_num = num.as_u64();
-                            let block_info = BlockInfo {
-                                number: block_num,
-                                hash: format!("{:?}", block.hash),
-                                transaction_count: block.transactions.len() as u32,
-                                timestamp: block.timestamp.as_u64(),
-                                gas_limit: block.gas_limit.as_u64(),
-                                gas_used: block.gas_used.as_u64(),
-                                miner: format!("{:?}", block.author.unwrap_or_default()),
-                                size: 0,     // Size not available from RPC
-                                reward: 0.0, // Reward not available from RPC
-                            };
-                            blocks.push(block_info);
+                    // Fetch last 5 blocks
+                    for i in 0..5 {
+                        match self
+                            .blockchain_client
+                            .get_block_by_number(start_block.saturating_sub(i))
+                            .await
+                        {
+                            Ok(Some(block)) => {
+                                if let Some(num) = block.number {
+                                    let block_num = num.as_u64();
+                                    let block_info = BlockInfo {
+                                        number: block_num,
+                                        hash: block
+                                            .hash
+                                            .map(|h| format!("{:#x}", h))
+                                            .unwrap_or_else(|| "0x0".to_string()),
+                                        transaction_count: block.transactions.len() as u32,
+                                        timestamp: block.timestamp.as_u64(),
+                                        gas_limit: block.gas_limit.as_u64(),
+                                        gas_used: block.gas_used.as_u64(),
+                                        miner: block
+                                            .author
+                                            .map(|a| format!("{:#x}", a))
+                                            .unwrap_or_else(|| "0x0".to_string()),
+                                        size: 0,     // Size not available from RPC
+                                        reward: 0.0, // Reward not available from RPC
+                                    };
+                                    blocks.push(block_info);
 
-                            // Collect transaction hashes from this block
-                            for tx_hash in &block.transactions {
-                                all_tx_hashes.push((
-                                    format!("{:?}", tx_hash),
-                                    block_num,
-                                    block.timestamp.as_u64(),
-                                ));
+                                    // Collect transaction hashes from this block
+                                    for tx_hash in &block.transactions {
+                                        all_tx_hashes.push((
+                                            format!("{:#x}", tx_hash),
+                                            block_num,
+                                            block.timestamp.as_u64(),
+                                        ));
+                                    }
+                                }
+                            }
+                            Ok(None) => {
+                                // Block not found - might be beyond available range
+                                tracing::debug!(target: "warpscan", "Block {} not found", start_block.saturating_sub(i));
+                            }
+                            Err(e) => {
+                                tracing::warn!(target: "warpscan", "Failed to fetch block {}: {}", start_block.saturating_sub(i), e);
                             }
                         }
                     }
+                    self.dashboard_data.latest_blocks = blocks;
                 }
-                self.dashboard_data.latest_blocks = blocks;
+            }
+            Ok(None) => {
+                tracing::warn!(target: "warpscan", "Latest block not found");
+                self.set_error("Failed to fetch latest block".to_string());
+            }
+            Err(e) => {
+                tracing::warn!(target: "warpscan", "Failed to fetch latest block: {}", e);
+                self.set_error(format!("Failed to fetch latest block: {}", e));
             }
         }
 
@@ -171,8 +224,8 @@ impl App {
 
                 let tx_info = TransactionInfo {
                     hash: tx_hash_str.clone(),
-                    from: format!("{:?}", tx.from),
-                    to: tx.to.map(|a| format!("{:?}", a)).unwrap_or_default(),
+                    from: format!("{:#x}", tx.from),
+                    to: tx.to.map(|a| format!("{:#x}", a)).unwrap_or_default(),
                     value: value_eth,
                     gas_price: gas_price_gwei,
                     gas_used,

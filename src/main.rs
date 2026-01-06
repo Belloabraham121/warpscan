@@ -89,6 +89,7 @@ async fn main() -> Result<()> {
         // Spawn background task to forward subscription events to main event loop
         tokio::spawn(async move {
             while let Some(event) = subscription_receiver.recv().await {
+                tracing::info!(target: "warpscan", "📥 Received SubscriptionEvent: {:?}", event);
                 let custom_event = match event {
                     SubscriptionEvent::NewBlock {
                         block_number,
@@ -140,6 +141,22 @@ async fn main() -> Result<()> {
                         message: error,
                     },
                 };
+                match &custom_event {
+                    warpscan::ui::events::CustomEvent::RealTimeUpdate { data_type, .. } => {
+                        tracing::info!(
+                            target: "warpscan",
+                            "📤 Sending RealTimeUpdate to main loop: data_type={}",
+                            data_type
+                        );
+                    }
+                    _ => {
+                        tracing::info!(
+                            target: "warpscan",
+                            "📤 Sending CustomEvent to main loop: {:?}",
+                            custom_event
+                        );
+                    }
+                }
                 let _ = event_sender.send(warpscan::ui::events::Event::Custom(custom_event));
             }
         });
@@ -257,40 +274,60 @@ async fn run_app<B: ratatui::backend::Backend>(
                     data_type,
                     data,
                 }) => {
+                    tracing::info!(
+                        target: "warpscan",
+                        "🎯 Main loop received RealTimeUpdate: data_type={}",
+                        data_type
+                    );
                     // Handle real-time updates
                     match data_type.as_str() {
                         "new_block" => {
-                            if app.state == AppState::Home {
-                                if let (Some(block_number), Some(block_hash_str)) = (
-                                    data.get("block_number").and_then(|v| v.as_u64()),
-                                    data.get("block_hash").and_then(|v| v.as_str()),
-                                ) {
-                                    if let Ok(block_hash) =
-                                        ethers::types::H256::from_str(block_hash_str)
-                                    {
-                                        app.handle_subscription_event(
-                                            SubscriptionEvent::NewBlock {
-                                                block_number,
-                                                block_hash,
-                                            },
-                                        )
-                                        .await;
-                                    }
+                            if let (Some(block_number), Some(block_hash_str)) = (
+                                data.get("block_number").and_then(|v| v.as_u64()),
+                                data.get("block_hash").and_then(|v| v.as_str()),
+                            ) {
+                                if let Ok(block_hash) =
+                                    ethers::types::H256::from_str(block_hash_str)
+                                {
+                                    // Delegate to App's subscription handler; it will decide
+                                    // which parts of the UI state to update.
+                                    app.handle_subscription_event(SubscriptionEvent::NewBlock {
+                                        block_number,
+                                        block_hash,
+                                    })
+                                    .await;
                                 }
                             }
                         }
                         "new_address_transaction" => {
-                            if app.state == AppState::AddressLookup {
-                                // This will be handled by fetching the transaction
-                                // For now, just trigger a refresh
-                                if let Some(address) = data.get("address").and_then(|v| v.as_str())
-                                {
-                                    if let Some(ref address_data) = app.address_data {
-                                        if address_data.details.address.to_lowercase()
-                                            == address.to_lowercase()
-                                        {
-                                            // Trigger address data refresh
-                                            let _ = app.lookup_address(address).await;
+                            // Real-time transaction for an address (from subscription manager).
+                            // If the current address matches, fetch the full transaction and
+                            // let App handle the incremental update.
+                            if let Some(address) = data.get("address").and_then(|v| v.as_str()) {
+                                if let Some(ref address_data) = app.address_data {
+                                    if address_data.details.address.to_lowercase()
+                                        == address.to_lowercase()
+                                    {
+                                        if let (Some(block_number), Some(tx_hash_str)) = (
+                                            data.get("block_number").and_then(|v| v.as_u64()),
+                                            data.get("transaction_hash").and_then(|v| v.as_str()),
+                                        ) {
+                                            // Fetch the full transaction and forward it
+                                            // into the subscription handler.
+                                            if let Ok(Some(tx)) = app
+                                                .blockchain_client
+                                                .get_transaction_by_hash(tx_hash_str)
+                                                .await
+                                            {
+                                                app.handle_subscription_event(
+                                                    SubscriptionEvent::NewAddressTransaction {
+                                                        address: address.to_string(),
+                                                        transaction: tx,
+                                                        block_number,
+                                                    },
+                                                )
+                                                .await;
+                                            }
                                         }
                                     }
                                 }

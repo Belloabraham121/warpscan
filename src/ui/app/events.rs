@@ -265,7 +265,7 @@ async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<boo
             if app.state == AppState::Home {
                 app.current_tab = 0;
             } else {
-                app.navigate_to(AppState::BlockExplorer);
+                app.navigate_to(AppState::BlockExplorer).await;
             }
         }
         KeyCode::Char('t') => {
@@ -273,7 +273,7 @@ async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<boo
             if app.state == AppState::Home {
                 app.current_tab = 1;
             } else {
-                app.navigate_to(AppState::TransactionViewer);
+                app.navigate_to(AppState::TransactionViewer).await;
             }
         }
         KeyCode::Char('a') => app.navigate_to(AppState::AddressLookup).await,

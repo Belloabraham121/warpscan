@@ -8,7 +8,9 @@ use ethers::providers::{Http, Middleware, Provider};
 use std::time::Duration;
 
 /// Common RPC ports for local development nodes
+#[allow(dead_code)]
 const ANVIL_DEFAULT_PORT: u16 = 8545;
+#[allow(dead_code)]
 const HARDHAT_DEFAULT_PORT: u16 = 8545;
 const LOCALHOST_URLS: &[&str] = &[
     "http://127.0.0.1:8545",

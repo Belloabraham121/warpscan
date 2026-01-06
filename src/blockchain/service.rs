@@ -395,7 +395,7 @@ impl BlockchainService {
         // Empty code means it's an EOA (Externally Owned Account)
         // Check explicitly: code must have length > 0 to be a contract
         // Empty code from RPC is typically returned as Bytes with len() == 0
-        let is_contract = code.len() > 0;
+        let is_contract = !code.is_empty();
 
         tracing::info!(
             target: "warpscan",
@@ -403,7 +403,7 @@ impl BlockchainService {
             address,
             code.len(),
             is_contract,
-            if code.len() > 0 {
+            if !code.is_empty() {
                 &code[..code.len().min(4)]
             } else {
                 &[]

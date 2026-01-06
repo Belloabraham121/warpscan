@@ -126,7 +126,7 @@ impl SubscriptionManager {
                             if let Some(block_number) = block.number {
                                 let _ = sender.send(SubscriptionEvent::NewBlock {
                                     block_number: block_number.as_u64(),
-                                    block_hash: block_hash,
+                                    block_hash,
                                 });
                             }
                         }
@@ -229,8 +229,9 @@ impl SubscriptionManager {
         let block_handle = {
             let provider = provider.clone();
             let sender = sender.clone();
-            let addr = addr;
             let address_str = address_str.clone();
+            // Capture addr for use in the closure
+            let target_addr = addr;
 
             tokio::spawn(async move {
                 match provider.watch_blocks().await {
@@ -248,7 +249,7 @@ impl SubscriptionManager {
                                 if let Some(block_number) = block.number {
                                     let block_num = block_number.as_u64();
                                     for tx in block.transactions {
-                                        if tx.from == addr || tx.to == Some(addr) {
+                                        if tx.from == target_addr || tx.to == Some(target_addr) {
                                             let _ = sender.send(
                                                 SubscriptionEvent::NewAddressTransaction {
                                                     address: address_str.clone(),

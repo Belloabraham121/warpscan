@@ -253,55 +253,53 @@ async fn run_app<B: ratatui::backend::Backend>(
                     // Handle periodic updates
                     // Tick placeholder - no async operations needed here
                 }
-                AppEvent::Custom(custom_event) => {
-                    match custom_event {
-                        warpscan::ui::events::CustomEvent::RealTimeUpdate { data_type, data } => {
-                            // Handle real-time updates
-                            match data_type.as_str() {
-                                "new_block" => {
-                                    if app.state == AppState::Home {
-                                        if let (Some(block_number), Some(block_hash_str)) = (
-                                            data.get("block_number").and_then(|v| v.as_u64()),
-                                            data.get("block_hash").and_then(|v| v.as_str()),
-                                        ) {
-                                            if let Ok(block_hash) =
-                                                ethers::types::H256::from_str(block_hash_str)
-                                            {
-                                                app.handle_subscription_event(
-                                                    SubscriptionEvent::NewBlock {
-                                                        block_number,
-                                                        block_hash,
-                                                    },
-                                                )
-                                                .await;
-                                            }
-                                        }
+                AppEvent::Custom(warpscan::ui::events::CustomEvent::RealTimeUpdate {
+                    data_type,
+                    data,
+                }) => {
+                    // Handle real-time updates
+                    match data_type.as_str() {
+                        "new_block" => {
+                            if app.state == AppState::Home {
+                                if let (Some(block_number), Some(block_hash_str)) = (
+                                    data.get("block_number").and_then(|v| v.as_u64()),
+                                    data.get("block_hash").and_then(|v| v.as_str()),
+                                ) {
+                                    if let Ok(block_hash) =
+                                        ethers::types::H256::from_str(block_hash_str)
+                                    {
+                                        app.handle_subscription_event(
+                                            SubscriptionEvent::NewBlock {
+                                                block_number,
+                                                block_hash,
+                                            },
+                                        )
+                                        .await;
                                     }
                                 }
-                                "new_address_transaction" => {
-                                    if app.state == AppState::AddressLookup {
-                                        // This will be handled by fetching the transaction
-                                        // For now, just trigger a refresh
-                                        if let Some(address) =
-                                            data.get("address").and_then(|v| v.as_str())
+                            }
+                        }
+                        "new_address_transaction" => {
+                            if app.state == AppState::AddressLookup {
+                                // This will be handled by fetching the transaction
+                                // For now, just trigger a refresh
+                                if let Some(address) = data.get("address").and_then(|v| v.as_str())
+                                {
+                                    if let Some(ref address_data) = app.address_data {
+                                        if address_data.details.address.to_lowercase()
+                                            == address.to_lowercase()
                                         {
-                                            if let Some(ref address_data) = app.address_data {
-                                                if address_data.details.address.to_lowercase()
-                                                    == address.to_lowercase()
-                                                {
-                                                    // Trigger address data refresh
-                                                    let _ = app.lookup_address(address).await;
-                                                }
-                                            }
+                                            // Trigger address data refresh
+                                            let _ = app.lookup_address(address).await;
                                         }
                                     }
                                 }
-                                _ => {}
                             }
                         }
                         _ => {}
                     }
                 }
+                AppEvent::Custom(_) => {}
                 _ => {}
             }
         }

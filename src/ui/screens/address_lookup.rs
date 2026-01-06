@@ -245,9 +245,7 @@ fn render_address_details_tab(
                 {
                     // Format balance with appropriate precision
                     let balance_value = details.balance;
-                    if balance_value >= 1_000_000.0 {
-                        format!("{:.2} ETH", balance_value)
-                    } else if balance_value >= 1_000.0 {
+                    if balance_value >= 1_000.0 {
                         format!("{:.2} ETH", balance_value)
                     } else if balance_value >= 1.0 {
                         format!("{:.4} ETH", balance_value)

@@ -158,15 +158,20 @@ impl BlockchainService {
             }
         };
 
-        // Update providers
-        self.provider = Arc::new(provider);
+        // Wrap new HTTP provider in Arc
+        let provider = Arc::new(provider);
+
+        // Update providers stored on the service
+        self.provider = provider.clone();
         self.ws_provider = ws_provider.clone();
 
-        // Update subscription manager with new providers
-        let (subscription_manager, subscription_receiver) =
-            SubscriptionManager::new(ws_provider, self.provider.clone());
-        self.subscription_manager = Some(Arc::new(tokio::sync::Mutex::new(subscription_manager)));
-        self.subscription_receiver = Some(subscription_receiver);
+        // Update existing subscription manager with new providers, if present,
+        // without recreating the event channel. This keeps the mpsc receiver
+        // that the UI is already listening on.
+        if let Some(manager_arc) = &self.subscription_manager {
+            let mut manager = manager_arc.lock().await;
+            manager.update_providers(ws_provider, provider.clone());
+        }
 
         // Update config to reflect local node
         self.config.network.rpc_url = local_rpc.to_string();

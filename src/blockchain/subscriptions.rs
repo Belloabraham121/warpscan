@@ -90,6 +90,20 @@ impl SubscriptionManager {
         (manager, receiver)
     }
 
+    /// Update providers without recreating channels.
+    ///
+    /// This allows us to switch between remote and local nodes (e.g. when the
+    /// user selects Local Node mode) while keeping the same SubscriptionManager
+    /// instance and event channel wiring used by the UI.
+    pub fn update_providers(
+        &mut self,
+        ws_provider: Option<Arc<Provider<Ws>>>,
+        http_provider: Arc<Provider<ethers::providers::Http>>,
+    ) {
+        self.ws_provider = ws_provider;
+        self.http_provider = http_provider;
+    }
+
     /// Get the event sender for broadcasting events
     pub fn event_sender(&self) -> mpsc::UnboundedSender<SubscriptionEvent> {
         self.event_sender.clone()
@@ -124,8 +138,15 @@ impl SubscriptionManager {
                         // Fetch full block details
                         if let Ok(Some(block)) = provider.get_block(block_hash).await {
                             if let Some(block_number) = block.number {
+                                let block_num = block_number.as_u64();
+                                tracing::info!(
+                                    target: "warpscan",
+                                    "📦 NewBlock event: block_number={}, block_hash={:#x}",
+                                    block_num,
+                                    block_hash
+                                );
                                 let _ = sender.send(SubscriptionEvent::NewBlock {
-                                    block_number: block_number.as_u64(),
+                                    block_number: block_num,
                                     block_hash,
                                 });
                             }
@@ -250,6 +271,13 @@ impl SubscriptionManager {
                                     let block_num = block_number.as_u64();
                                     for tx in block.transactions {
                                         if tx.from == target_addr || tx.to == Some(target_addr) {
+                                            tracing::info!(
+                                                target: "warpscan",
+                                                "🔔 NewAddressTransaction event: address={}, tx_hash={:#x}, block={}",
+                                                address_str,
+                                                tx.hash(),
+                                                block_num
+                                            );
                                             let _ = sender.send(
                                                 SubscriptionEvent::NewAddressTransaction {
                                                     address: address_str.clone(),

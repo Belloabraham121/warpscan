@@ -1,3 +1,5 @@
+use ethers::types::U256;
+
 use super::super::models::{
     AccountHistoryEntry, AddressDetails, AddressTab, AddressType, CompleteAddressData,
     InternalTransaction, TokenInfo, TokenTransfer, TokenType,
@@ -13,6 +15,34 @@ impl App {
         self.set_loading("address_search", true);
         self.clear_messages();
 
+        // Determine if we should use Etherscan API or RPC based on selected mode
+        // If mode not selected yet, default to Local Node if local node detected, otherwise Etherscan
+        let use_etherscan = match self.data_mode {
+            Some(crate::ui::app::state::DataMode::Etherscan) => {
+                tracing::info!(target: "warpscan", "Address lookup using Etherscan mode for {}", address);
+                true
+            }
+            Some(crate::ui::app::state::DataMode::LocalNode) => {
+                tracing::info!(target: "warpscan", "Address lookup using Local Node mode for {}", address);
+                false
+            }
+            None => {
+                // Mode not selected yet - check if local node was detected
+                let is_local = self
+                    .config
+                    .network
+                    .node_type
+                    .as_ref()
+                    .map(|t| t == "anvil" || t == "hardhat" || t == "local")
+                    .unwrap_or(false);
+                tracing::warn!(target: "warpscan", "Mode not selected! Defaulting to {} for {}", 
+                    if is_local { "Local RPC" } else { "Etherscan" }, address);
+                !is_local // Use Etherscan if not local, otherwise use RPC
+            }
+        };
+
+        tracing::info!(target: "warpscan", "use_etherscan={} for address {}", use_etherscan, address);
+
         // PARALLELIZE: Fetch ALL data concurrently
         // get_address_info, transactions, token transfers, token balances, internal transactions,
         // and ENS resolution can all run in parallel since they're independent
@@ -24,18 +54,33 @@ impl App {
             token_balances_result,
             internal_transactions_result,
         ) = tokio::join!(
-            // Fetch address info (balance, transaction count, contract status)
-            self.blockchain_client.get_address_info(address),
-            // Resolve ENS name (safe to call for all addresses, returns None for contracts/non-ENS)
+            // Fetch address info (balance, transaction count, contract status) - respect mode selection
+            // In Local Node mode: uses Anvil RPC directly for balance, transaction count, contract status
+            // In Etherscan mode: uses Etherscan API for balance, RPC for transaction count and contract status
+            self.blockchain_client
+                .get_address_info_with_mode(address, use_etherscan),
+            // Resolve ENS name (safe to call for all addresses, returns None for contracts/non-ENS) - always use RPC
             self.blockchain_client.resolve_ens_name(address),
-            // Fetch transactions
-            self.blockchain_client.get_address_transactions(address),
-            // Fetch token transfers
-            self.blockchain_client.get_token_transfers(address),
-            // Fetch token balances
-            self.blockchain_client.get_token_balances(address),
-            // Fetch internal transactions
-            self.blockchain_client.get_internal_transactions(address),
+            // Fetch transactions - respect mode selection
+            // In Local Node mode: returns empty (RPC doesn't support per-address tx listing)
+            // In Etherscan mode: uses Etherscan API
+            self.blockchain_client
+                .get_address_transactions_with_mode(address, use_etherscan),
+            // Fetch token transfers - respect mode selection
+            // In Local Node mode: returns empty (local nodes don't index token transfers)
+            // In Etherscan mode: uses Etherscan API
+            self.blockchain_client
+                .get_token_transfers_with_mode(address, use_etherscan),
+            // Fetch token balances - respect mode selection
+            // In Local Node mode: returns empty (local nodes don't index token balances)
+            // In Etherscan mode: uses Etherscan API
+            self.blockchain_client
+                .get_token_balances_with_mode(address, use_etherscan),
+            // Fetch internal transactions - respect mode selection
+            // In Local Node mode: returns empty (local nodes don't index internal transactions)
+            // In Etherscan mode: uses Etherscan API
+            self.blockchain_client
+                .get_internal_transactions_with_mode(address, use_etherscan),
         );
 
         // Process address info result
@@ -48,14 +93,110 @@ impl App {
                     AddressType::EOA
                 };
 
-                // OPTIMIZE: Convert balance from string to f64 (assuming it's in wei, convert to ETH)
-                // Use constant for division to avoid repeated calculation
-                const WEI_TO_ETH: f64 = 1_000_000_000_000_000_000.0;
-                let balance_eth = address_info
-                    .balance
-                    .parse::<ethers::types::U256>()
-                    .map(|wei| wei.as_u128() as f64 / WEI_TO_ETH)
-                    .unwrap_or(0.0);
+                // Convert balance from wei (string) to ETH (f64) using U256 division
+                // This avoids precision loss by dividing in U256 first, then converting to f64
+                tracing::info!(
+                    target: "warpscan",
+                    "Starting balance conversion for {}: raw balance string='{}'",
+                    address,
+                    address_info.balance
+                );
+
+                let balance_eth = match U256::from_dec_str(&address_info.balance) {
+                    Ok(wei) => {
+                        tracing::info!(
+                            target: "warpscan",
+                            "Parsed balance U256 for {}: wei={}, wei_string='{}'",
+                            address,
+                            wei,
+                            wei.to_string()
+                        );
+
+                        // Validate: 10,000 ETH should be 10000000000000000000000 wei
+                        // Let's ensure we're dividing correctly
+                        let divisor = ethers::types::U256::exp10(18); // 10^18 wei = 1 ETH
+
+                        // Double-check divisor is correct
+                        let divisor_str = divisor.to_string();
+                        tracing::info!(
+                            target: "warpscan",
+                            "Divisor (10^18): {} (should be 1000000000000000000)",
+                            divisor_str
+                        );
+
+                        if divisor > ethers::types::U256::zero() {
+                            let quotient = wei / divisor;
+                            let remainder = wei % divisor;
+
+                            // Convert quotient using string to avoid precision issues
+                            let quotient_str = quotient.to_string();
+
+                            // Log the intermediate values for debugging
+                            tracing::info!(
+                                target: "warpscan",
+                                "Division result for {}: wei={}, divisor={}, quotient_str='{}', remainder={}",
+                                address,
+                                wei.to_string(),
+                                divisor_str,
+                                quotient_str,
+                                remainder.to_string()
+                            );
+
+                            // Parse quotient string to f64
+                            let quotient_f64 = quotient_str.parse::<f64>()
+                                .unwrap_or_else(|e| {
+                                    tracing::error!(
+                                        target: "warpscan",
+                                        "CRITICAL: Failed to parse quotient '{}' as f64: {}. This should not happen!",
+                                        quotient_str,
+                                        e
+                                    );
+                                    0.0
+                                });
+
+                            // Convert remainder (always < 10^18, so fits in u128)
+                            let remainder_u128 = remainder.as_u128();
+                            let remainder_f64 = remainder_u128 as f64 / 1_000_000_000_000_000_000.0;
+
+                            let result = quotient_f64 + remainder_f64;
+
+                            // Validation: if we have 10,000 ETH, result should be close to 10000
+                            if result > 100_000_000.0 {
+                                tracing::error!(
+                                    target: "warpscan",
+                                    "WARNING: Balance conversion seems wrong! Input wei={}, Result={} ETH. Expected ~10000 ETH for Anvil default account.",
+                                    wei.to_string(),
+                                    result
+                                );
+                            }
+
+                            tracing::info!(
+                                target: "warpscan",
+                                "Final balance conversion for {}: {} wei = {} ETH (quotient={}, remainder={})",
+                                address,
+                                wei.to_string(),
+                                result,
+                                quotient_f64,
+                                remainder_f64
+                            );
+
+                            result
+                        } else {
+                            tracing::error!(target: "warpscan", "Invalid divisor (zero) for balance conversion");
+                            0.0
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            target: "warpscan",
+                            "Failed to parse balance string '{}' for address {}: {}",
+                            address_info.balance,
+                            address,
+                            e
+                        );
+                        0.0
+                    }
+                };
 
                 // Use ENS name only for EOA addresses
                 let ens_name = match address_type {
@@ -66,7 +207,7 @@ impl App {
                 // Create comprehensive address details
                 let details = AddressDetails {
                     address: address.to_string(),
-                    address_type,
+                    address_type: address_type.clone(),
                     balance: balance_eth,
                     token_count: 0, // Will be updated after fetching tokens
                     estimated_net_worth: balance_eth, // For now, just use ETH balance
@@ -249,7 +390,18 @@ impl App {
                 };
 
                 self.address_data = Some(complete_data);
-                self.set_success(format!("Address {} loaded successfully", address));
+
+                // Start subscriptions for this address
+                if let Err(e) = self.start_subscriptions().await {
+                    tracing::warn!(target: "warpscan", "Failed to start address subscriptions: {}", e);
+                }
+
+                // Create success message with debug info
+                let debug_info = format!(
+                    "Address {} loaded | Type: {:?} | Balance: {:.6} ETH | Tx Count: {}",
+                    address, &address_type, balance_eth, address_info.transaction_count
+                );
+                self.set_success(debug_info);
             }
             Err(e) => {
                 self.set_error(format!("Failed to lookup address: {}", e));
@@ -304,7 +456,8 @@ impl App {
 
     /// Navigate to an address (used for clicking on addresses)
     pub async fn navigate_to_address(&mut self, address: &str) {
-        self.navigate_to(crate::ui::app::state::AppState::AddressLookup);
+        self.navigate_to(crate::ui::app::state::AppState::AddressLookup)
+            .await;
         self.set_input(address.to_string());
         if let Err(e) = self.lookup_address(address).await {
             self.set_error(format!("Failed to lookup address: {}", e));
@@ -313,7 +466,8 @@ impl App {
 
     /// Navigate to a transaction (used for clicking on transaction hashes)
     pub async fn navigate_to_transaction(&mut self, tx_hash: &str) {
-        self.navigate_to(crate::ui::app::state::AppState::TransactionViewer);
+        self.navigate_to(crate::ui::app::state::AppState::TransactionViewer)
+            .await;
         self.set_input(tx_hash.to_string());
         self.input_data_expanded = false; // Reset expansion state
 
@@ -322,10 +476,28 @@ impl App {
         self.set_loading("transaction_search", true);
         self.clear_messages();
 
+        // Determine if we should use Etherscan API or RPC based on selected mode
+        // If mode not selected yet, default to Local Node if local node detected, otherwise Etherscan
+        let use_etherscan = match self.data_mode {
+            Some(crate::ui::app::state::DataMode::Etherscan) => true,
+            Some(crate::ui::app::state::DataMode::LocalNode) => false,
+            None => {
+                // Mode not selected yet - check if local node was detected
+                let is_local = self
+                    .config
+                    .network
+                    .node_type
+                    .as_ref()
+                    .map(|t| t == "anvil" || t == "hardhat" || t == "local")
+                    .unwrap_or(false);
+                !is_local // Use Etherscan if not local, otherwise use RPC
+            }
+        };
+
         // Lookup transaction details
         match self
             .blockchain_client
-            .get_transaction_details(tx_hash)
+            .get_transaction_details_with_mode(tx_hash, use_etherscan)
             .await
         {
             Ok(tx_details) => {

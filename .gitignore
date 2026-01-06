@@ -4,3 +4,4 @@ target/
 .figma/
 .trae/
 .DS_Store
+foundry-test/

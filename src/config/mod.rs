@@ -4,6 +4,7 @@
 //! from TOML files and environment variables.
 
 pub mod manager;
+pub mod node_detection;
 pub mod types;
 
 // Re-export commonly used types and structs

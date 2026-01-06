@@ -29,6 +29,7 @@ pub struct AddressDetails {
     pub address: String,
     pub address_type: AddressType,
     pub balance: f64,
+
     pub token_count: u32,
     pub estimated_net_worth: f64,
     pub total_transactions: u64,

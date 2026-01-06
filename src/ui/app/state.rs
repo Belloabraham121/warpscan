@@ -25,6 +25,20 @@ pub enum InputMode {
     Editing,
 }
 
+/// Data source mode for blockchain queries
+#[derive(Debug, Clone, PartialEq)]
+pub enum DataMode {
+    LocalNode, // Use RPC directly (Anvil/Hardhat)
+    Etherscan, // Use Etherscan API
+}
+
+/// Mode selection state
+#[derive(Debug, Clone, PartialEq)]
+pub enum ModeSelectionState {
+    Selecting, // Currently showing mode selection
+    Selected,  // Mode has been selected
+}
+
 impl AppState {
     /// Get the current state as a string for display
     pub fn title(&self) -> &'static str {

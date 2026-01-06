@@ -4,13 +4,14 @@ use super::etherscan::{
     EtherscanChain, EtherscanClient, InternalTransaction as EtherscanInternalTransaction,
     TokenBalance as EtherscanTokenBalance, TokenTransfer as EtherscanTokenTransfer,
 };
+use super::subscriptions::{SubscriptionEvent, SubscriptionManager};
 use super::types::AddressTx;
 use super::types::GasPrices;
 use crate::cache::{AddressInfo, CacheManager};
 use crate::config::Config;
 use crate::error::{Error, Result};
 use ethers::{
-    providers::{Http, Middleware, Provider},
+    providers::{Http, Middleware, Provider, Ws},
     types::{
         transaction::eip2718::TypedTransaction, Address, Block, Transaction, TransactionReceipt,
         TransactionRequest, H256, U256,
@@ -22,9 +23,12 @@ use std::sync::Arc;
 /// Blockchain service for interacting with Ethereum
 pub struct BlockchainService {
     provider: Arc<Provider<Http>>,
+    ws_provider: Option<Arc<Provider<Ws>>>,
     cache: Arc<CacheManager>,
     config: Config,
     etherscan: Option<EtherscanClient>,
+    subscription_manager: Option<Arc<tokio::sync::Mutex<SubscriptionManager>>>,
+    subscription_receiver: Option<tokio::sync::mpsc::UnboundedReceiver<SubscriptionEvent>>,
 }
 
 impl BlockchainService {
@@ -60,12 +64,123 @@ impl BlockchainService {
             EtherscanClient::new(key, chain)
         });
 
+        // Try to create WebSocket provider from HTTP URL
+        let ws_provider = Self::create_ws_provider(&config.network.rpc_url).await;
+
+        // Initialize subscription manager
+        let (subscription_manager, subscription_receiver) =
+            SubscriptionManager::new(ws_provider.clone(), provider.clone());
+
         Ok(Self {
             provider,
+            ws_provider,
             cache,
             config,
             etherscan,
+            subscription_manager: Some(Arc::new(tokio::sync::Mutex::new(subscription_manager))),
+            subscription_receiver: Some(subscription_receiver),
         })
+    }
+
+    /// Get subscription event receiver
+    pub fn subscription_receiver(
+        &mut self,
+    ) -> Option<tokio::sync::mpsc::UnboundedReceiver<SubscriptionEvent>> {
+        self.subscription_receiver.take()
+    }
+
+    /// Create WebSocket provider from HTTP URL
+    async fn create_ws_provider(rpc_url: &str) -> Option<Arc<Provider<Ws>>> {
+        // Convert HTTP URL to WebSocket URL
+        let ws_url = rpc_url
+            .replace("http://", "ws://")
+            .replace("https://", "wss://");
+
+        match Provider::<Ws>::connect(&ws_url).await {
+            Ok(provider) => {
+                tracing::info!(
+                    target: "warpscan",
+                    "WebSocket provider connected at {}",
+                    ws_url
+                );
+                Some(Arc::new(provider))
+            }
+            Err(e) => {
+                tracing::warn!(
+                    target: "warpscan",
+                    "Failed to connect WebSocket provider at {}: {}. Will use HTTP polling fallback.",
+                    ws_url,
+                    e
+                );
+                None
+            }
+        }
+    }
+
+    /// Get subscription manager
+    pub fn subscription_manager(&self) -> Option<Arc<tokio::sync::Mutex<SubscriptionManager>>> {
+        self.subscription_manager.clone()
+    }
+
+    /// Switch provider to use local Anvil/Hardhat node directly
+    /// This is called when user selects "Local Node" mode
+    pub async fn switch_to_local_node(&mut self) -> Result<()> {
+        let local_rpc = "http://127.0.0.1:8545";
+        let local_ws = "ws://127.0.0.1:8545";
+
+        tracing::info!(
+            target: "warpscan",
+            "Switching to local node at {}",
+            local_rpc
+        );
+
+        // Create new HTTP provider with local RPC
+        let provider = Provider::<Http>::try_from(local_rpc)
+            .map_err(|e| Error::network(format!("Failed to create local provider: {}", e)))?;
+
+        // Try to create WebSocket provider
+        let ws_provider = match Provider::<Ws>::connect(local_ws).await {
+            Ok(ws) => {
+                tracing::info!(
+                    target: "warpscan",
+                    "WebSocket connected to local node at {}",
+                    local_ws
+                );
+                Some(Arc::new(ws))
+            }
+            Err(e) => {
+                tracing::warn!(
+                    target: "warpscan",
+                    "Failed to connect WebSocket to local node: {}. Will use HTTP polling.",
+                    e
+                );
+                None
+            }
+        };
+
+        // Update providers
+        self.provider = Arc::new(provider);
+        self.ws_provider = ws_provider.clone();
+
+        // Update subscription manager with new providers
+        let (subscription_manager, subscription_receiver) =
+            SubscriptionManager::new(ws_provider, self.provider.clone());
+        self.subscription_manager = Some(Arc::new(tokio::sync::Mutex::new(subscription_manager)));
+        self.subscription_receiver = Some(subscription_receiver);
+
+        // Update config to reflect local node
+        self.config.network.rpc_url = local_rpc.to_string();
+        self.config.network.node_type = Some("anvil".to_string());
+        self.config.network.chain_id = 31337; // Anvil default
+        self.config.network.name = "Anvil Local".to_string();
+
+        tracing::info!(
+            target: "warpscan",
+            "Successfully switched to local node at {} (Chain ID: 31337)",
+            local_rpc
+        );
+
+        Ok(())
     }
 
     /// Test network connection
@@ -165,27 +280,83 @@ impl BlockchainService {
 
     /// Get address balance
     pub async fn get_address_balance(&self, address: &str) -> Result<U256> {
-        // Prefer Etherscan V2 when configured
-        if let Some(ref client) = self.etherscan {
-            match client.get_address_balance(address).await {
-                Ok(bal) => return Ok(bal),
-                Err(err) => {
-                    // Fallback to provider on error
-                    tracing::warn!(
-                        target = "warpscan",
-                        "Etherscan failed for balance: {}. Falling back to provider.",
-                        err
-                    );
+        self.get_address_balance_with_mode(address, true).await
+    }
+
+    /// Get address balance with mode selection
+    pub async fn get_address_balance_with_mode(
+        &self,
+        address: &str,
+        use_etherscan: bool,
+    ) -> Result<U256> {
+        // Check if this is a local node - skip Etherscan for local nodes
+        let is_local_node = self
+            .config
+            .network
+            .node_type
+            .as_ref()
+            .map(|t| t == "anvil" || t == "hardhat" || t == "local")
+            .unwrap_or(false);
+
+        // Use Etherscan only if requested and not a local node
+        if use_etherscan && !is_local_node {
+            if let Some(ref client) = self.etherscan {
+                match client.get_address_balance(address).await {
+                    Ok(bal) => return Ok(bal),
+                    Err(err) => {
+                        // Fallback to provider on error
+                        tracing::warn!(
+                            target = "warpscan",
+                            "Etherscan failed for balance: {}. Falling back to provider.",
+                            err
+                        );
+                    }
                 }
             }
         }
+
+        // Use RPC provider directly (works with Anvil/Hardhat/local nodes)
         let addr = Address::from_str(address)
             .map_err(|e| Error::validation(format!("Invalid address: {}", e)))?;
 
-        self.provider
+        let balance = self
+            .provider
             .get_balance(addr, None)
             .await
-            .map_err(|e| Error::blockchain(format!("{}", e)))
+            .map_err(|e| Error::blockchain(format!("{}", e)))?;
+
+        // Log the raw balance value for debugging
+        let balance_str = balance.to_string();
+        tracing::info!(
+            target: "warpscan",
+            "Raw balance from RPC for {}: U256={}, string='{}' [use_etherscan={}, is_local_node={}]",
+            address,
+            balance,
+            balance_str,
+            use_etherscan,
+            is_local_node
+        );
+
+        // For logging only - calculate ETH value using safe conversion
+        let divisor = ethers::types::U256::exp10(18);
+        let quotient = balance / divisor;
+        let remainder = balance % divisor;
+        let quotient_str = quotient.to_string();
+        let balance_eth_log = quotient_str.parse::<f64>().unwrap_or(0.0)
+            + (remainder.as_u128() as f64 / 1_000_000_000_000_000_000.0);
+
+        tracing::info!(
+            target: "warpscan",
+            "Balance conversion for {}: wei={}, quotient='{}', ETH={:.6} [use_etherscan={}, is_local_node={}]",
+            address,
+            balance_str,
+            quotient_str,
+            balance_eth_log,
+            use_etherscan,
+            is_local_node
+        );
+
+        Ok(balance)
     }
 
     /// Get address transaction count (nonce)
@@ -193,10 +364,20 @@ impl BlockchainService {
         let addr = Address::from_str(address)
             .map_err(|e| Error::validation(format!("Invalid address: {}", e)))?;
 
-        self.provider
+        let count = self
+            .provider
             .get_transaction_count(addr, None)
             .await
-            .map_err(|e| Error::blockchain(format!("{}", e)))
+            .map_err(|e| Error::blockchain(format!("{}", e)))?;
+
+        tracing::debug!(
+            target: "warpscan",
+            "Transaction count (nonce) for {}: {}",
+            address,
+            count
+        );
+
+        Ok(count)
     }
 
     /// Check if address is a contract
@@ -210,20 +391,63 @@ impl BlockchainService {
             .await
             .map_err(|e| Error::blockchain(format!("{}", e)))?;
 
-        Ok(!code.is_empty())
+        // An address is a contract if it has code
+        // Empty code means it's an EOA (Externally Owned Account)
+        // Check explicitly: code must have length > 0 to be a contract
+        // Empty code from RPC is typically returned as Bytes with len() == 0
+        let is_contract = !code.is_empty();
+
+        tracing::info!(
+            target: "warpscan",
+            "Contract check for {}: code_len={}, is_contract={}, code_first_bytes={:?}",
+            address,
+            code.len(),
+            is_contract,
+            if !code.is_empty() {
+                &code[..code.len().min(4)]
+            } else {
+                &[]
+            }
+        );
+
+        Ok(is_contract)
     }
 
     /// Get comprehensive address information
     pub async fn get_address_info(&self, address: &str) -> Result<AddressInfo> {
-        // Check cache first
+        self.get_address_info_with_mode(address, true).await
+    }
+
+    /// Get comprehensive address information with mode selection
+    pub async fn get_address_info_with_mode(
+        &self,
+        address: &str,
+        use_etherscan: bool,
+    ) -> Result<AddressInfo> {
+        // Check if this is a local node - for local nodes, always re-check contract status
+        // as it might have changed (contracts can be deployed)
+        let is_local_node = self
+            .config
+            .network
+            .node_type
+            .as_ref()
+            .map(|t| t == "anvil" || t == "hardhat" || t == "local")
+            .unwrap_or(false);
+
+        // Check cache first, but for local nodes, we'll re-check contract status
         if let Some(cached_info) = self.cache.get_address_info(address) {
-            return Ok(cached_info);
+            // For local nodes, always re-check contract status to ensure accuracy
+            if !is_local_node {
+                return Ok(cached_info);
+            }
+            // For local nodes, continue to re-check contract status below
         }
 
         // PARALLELIZE: Fetch balance, transaction count, and contract status concurrently
         // These calls are independent and can be done in parallel
+        // In Local Node mode, balance fetch will use RPC directly (skip Etherscan)
         let (balance_result, transaction_count_result, is_contract_result) = tokio::join!(
-            self.get_address_balance(address),
+            self.get_address_balance_with_mode(address, use_etherscan),
             self.get_address_transaction_count(address),
             self.is_contract(address),
         );
@@ -282,6 +506,136 @@ impl BlockchainService {
         Ok(vec![])
     }
 
+    /// Get address transactions with mode selection
+    pub async fn get_address_transactions_with_mode(
+        &self,
+        address: &str,
+        use_etherscan: bool,
+    ) -> Result<Vec<AddressTx>> {
+        if use_etherscan {
+            self.get_address_transactions(address).await
+        } else {
+            // Local mode: fetch transactions from blocks by scanning recent blocks
+            self.get_address_transactions_from_rpc(address).await
+        }
+    }
+
+    /// Get address transactions from RPC by scanning blocks
+    /// This is used for local nodes where we need to scan blocks to find transactions
+    async fn get_address_transactions_from_rpc(&self, address: &str) -> Result<Vec<AddressTx>> {
+        use super::types::TransactionStatus;
+
+        let addr = Address::from_str(address)
+            .map_err(|e| Error::validation(format!("Invalid address: {}", e)))?;
+
+        // Get current block number
+        let latest_block = self
+            .provider
+            .get_block_number()
+            .await
+            .map_err(|e| Error::blockchain(format!("Failed to get block number: {}", e)))?;
+        let latest_block_num = latest_block.as_u64();
+
+        // For local nodes, scan the last 100 blocks (or all blocks if less than 100)
+        // This should be enough for local development
+        let start_block = latest_block_num.saturating_sub(100);
+        let mut transactions = Vec::new();
+
+        tracing::info!(
+            target: "warpscan",
+            "Scanning blocks {} to {} for transactions involving address {}",
+            start_block,
+            latest_block_num,
+            address
+        );
+
+        // Scan blocks in reverse order (newest first)
+        for block_num in (start_block..=latest_block_num).rev() {
+            if let Ok(Some(block)) = self.get_block_by_number(block_num).await {
+                // Get block timestamp
+                let block_timestamp = block.timestamp.as_u64();
+
+                // Process transaction hashes from the block
+                for tx_hash in &block.transactions {
+                    if let Ok(Some(tx)) = self
+                        .get_transaction_by_hash(&format!("{:?}", tx_hash))
+                        .await
+                    {
+                        let matches =
+                            tx.from == addr || tx.to.map(|to| to == addr).unwrap_or(false);
+
+                        if matches {
+                            // Get receipt for gas_used and status
+                            let tx_hash_str = format!("{:?}", tx.hash);
+                            let receipt_result = self.get_transaction_receipt(&tx_hash_str).await;
+
+                            let (status, fee_eth) = if let Ok(Some(receipt)) = receipt_result {
+                                let gas_used_val =
+                                    receipt.gas_used.map(|g| g.as_u128() as u64).unwrap_or(0);
+                                let status_val = if receipt.status == Some(1.into()) {
+                                    TransactionStatus::Success
+                                } else if receipt.status == Some(0.into()) {
+                                    TransactionStatus::Failed
+                                } else {
+                                    TransactionStatus::Pending
+                                };
+                                let gas_price_val = receipt
+                                    .effective_gas_price
+                                    .map(|p| p.as_u64() / 1_000_000_000)
+                                    .unwrap_or_else(|| {
+                                        tx.gas_price
+                                            .map(|p| p.as_u64() / 1_000_000_000)
+                                            .unwrap_or(0)
+                                    });
+                                let fee =
+                                    (gas_used_val as f64 * gas_price_val as f64) / 1_000_000_000.0;
+                                (status_val, fee)
+                            } else {
+                                (TransactionStatus::Pending, 0.0)
+                            };
+
+                            // Convert value from wei to ETH
+                            const WEI_TO_ETH: f64 = 1_000_000_000_000_000_000.0;
+                            let value_eth = tx.value.as_u128() as f64 / WEI_TO_ETH;
+
+                            // Extract method name from input data
+                            let method = if tx.input.len() >= 4 {
+                                // First 4 bytes (8 hex chars) are the method selector
+                                format!("0x{}", hex::encode(&tx.input[..4.min(tx.input.len())]))
+                            } else {
+                                String::new()
+                            };
+
+                            transactions.push(AddressTx {
+                                tx_hash: tx_hash_str,
+                                method,
+                                block_number: block_num,
+                                timestamp: block_timestamp,
+                                from: format!("{:?}", tx.from),
+                                to: tx.to.map(|a| format!("{:?}", a)).unwrap_or_default(),
+                                value_eth,
+                                fee_eth,
+                                status,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sort by block number descending (newest first)
+        transactions.sort_by(|a, b| b.block_number.cmp(&a.block_number));
+
+        tracing::info!(
+            target: "warpscan",
+            "Found {} transactions for address {} from RPC",
+            transactions.len(),
+            address
+        );
+
+        Ok(transactions)
+    }
+
     /// Get token transfers for an address
     pub async fn get_token_transfers(&self, address: &str) -> Result<Vec<EtherscanTokenTransfer>> {
         // Check cache first
@@ -310,6 +664,20 @@ impl BlockchainService {
             }
         }
         Ok(vec![])
+    }
+
+    /// Get token transfers with mode selection
+    pub async fn get_token_transfers_with_mode(
+        &self,
+        address: &str,
+        use_etherscan: bool,
+    ) -> Result<Vec<EtherscanTokenTransfer>> {
+        if use_etherscan {
+            self.get_token_transfers(address).await
+        } else {
+            // Local mode: return empty list (local nodes typically don't index token transfers)
+            Ok(vec![])
+        }
     }
 
     /// Get internal transactions for an address
@@ -373,6 +741,34 @@ impl BlockchainService {
             }
         }
         Ok(vec![])
+    }
+
+    /// Get internal transactions with mode selection
+    pub async fn get_internal_transactions_with_mode(
+        &self,
+        address: &str,
+        use_etherscan: bool,
+    ) -> Result<Vec<EtherscanInternalTransaction>> {
+        if use_etherscan {
+            self.get_internal_transactions(address).await
+        } else {
+            // Local mode: return empty list (local nodes typically don't index internal transactions)
+            Ok(vec![])
+        }
+    }
+
+    /// Get token balances with mode selection
+    pub async fn get_token_balances_with_mode(
+        &self,
+        address: &str,
+        use_etherscan: bool,
+    ) -> Result<Vec<EtherscanTokenBalance>> {
+        if use_etherscan {
+            self.get_token_balances(address).await
+        } else {
+            // Local mode: return empty list (local nodes typically don't index token balances)
+            Ok(vec![])
+        }
     }
 
     /// Get current gas prices
@@ -495,19 +891,28 @@ impl BlockchainService {
         &self,
         tx_hash: &str,
     ) -> Result<crate::ui::models::TransactionDetails> {
+        self.get_transaction_details_with_mode(tx_hash, true).await
+    }
+
+    /// Get transaction details with mode selection
+    pub async fn get_transaction_details_with_mode(
+        &self,
+        tx_hash: &str,
+        use_etherscan: bool,
+    ) -> Result<crate::ui::models::TransactionDetails> {
         use crate::ui::models::{TransactionDetails, TransactionStatus};
 
-        // Check if this is a local node (Anvil/Hardhat) - skip Etherscan for local nodes
+        // Check if this is a local node - skip Etherscan for local nodes
         let is_local_node = self
             .config
             .network
             .node_type
             .as_ref()
-            .map(|t| t == "anvil" || t == "hardhat")
+            .map(|t| t == "anvil" || t == "hardhat" || t == "local")
             .unwrap_or(false);
 
-        // Try Etherscan first if available and not a local node
-        if !is_local_node {
+        // Try Etherscan first if mode is Etherscan and not a local node
+        if use_etherscan && !is_local_node {
             if let Some(ref client) = self.etherscan {
                 match client.get_transaction_details(tx_hash).await {
                     Ok(etherscan_tx) => {

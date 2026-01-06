@@ -67,6 +67,20 @@ pub struct WalletManager {
     multisig_wallets: Vec<MultisigWallet>,
 }
 
+/// Wallet statistics
+#[derive(Debug, Clone)]
+pub struct WalletStats {
+    pub total_wallets: usize,
+    pub total_multisig_wallets: usize,
+    pub wallets_with_mnemonic: usize,
+}
+
+impl Default for WalletManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WalletManager {
     /// Create a new wallet manager
     pub fn new() -> Self {
@@ -261,19 +275,5 @@ impl WalletManager {
             total_multisig_wallets: self.multisig_wallets.len(),
             wallets_with_mnemonic: self.wallets.iter().filter(|w| w.mnemonic.is_some()).count(),
         }
-    }
-}
-
-/// Wallet statistics
-#[derive(Debug, Clone)]
-pub struct WalletStats {
-    pub total_wallets: usize,
-    pub total_multisig_wallets: usize,
-    pub wallets_with_mnemonic: usize,
-}
-
-impl Default for WalletManager {
-    fn default() -> Self {
-        Self::new()
     }
 }

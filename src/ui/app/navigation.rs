@@ -3,21 +3,61 @@ use super::state::{AppState, InputMode};
 
 impl App {
     /// Navigate to a new state
-    pub fn navigate_to(&mut self, new_state: AppState) {
+    pub async fn navigate_to(&mut self, new_state: AppState) {
         if self.state != new_state {
+            // Stop subscriptions for current state
+            self.stop_current_subscriptions().await;
+
             self.navigation_history.push(self.state.clone());
             self.previous_state = Some(self.state.clone());
+            let state_to_set = new_state.clone();
             self.state = new_state;
             self.reset_navigation_state();
+
+            // Auto-enter editing mode for input screens if no data exists
+            match state_to_set {
+                AppState::AddressLookup => {
+                    // If no address data exists, automatically enter editing mode
+                    if self.address_data.is_none() {
+                        self.input_mode = crate::ui::app::state::InputMode::Editing;
+                    } else {
+                        // Start subscriptions if address data exists
+                        if let Err(e) = self.start_subscriptions().await {
+                            tracing::warn!(target: "warpscan", "Failed to start address subscriptions: {}", e);
+                        }
+                    }
+                }
+                AppState::TransactionViewer => {
+                    // If no transaction data exists, automatically enter editing mode
+                    if self.transaction_data.is_none() {
+                        self.input_mode = crate::ui::app::state::InputMode::Editing;
+                    }
+                }
+                AppState::Home => {
+                    // Start subscriptions for homepage
+                    if let Err(e) = self.start_subscriptions().await {
+                        tracing::warn!(target: "warpscan", "Failed to start homepage subscriptions: {}", e);
+                    }
+                }
+                _ => {}
+            }
         }
     }
 
     /// Go back to the previous state
-    pub fn go_back(&mut self) {
+    pub async fn go_back(&mut self) {
         if let Some(previous) = self.navigation_history.pop() {
+            // Stop subscriptions for current state
+            self.stop_current_subscriptions().await;
+
             self.previous_state = Some(self.state.clone());
             self.state = previous;
             self.reset_navigation_state();
+
+            // Start subscriptions for the state we're going back to
+            if let Err(e) = self.start_subscriptions().await {
+                tracing::warn!(target: "warpscan", "Failed to start subscriptions on go_back: {}", e);
+            }
         }
     }
 

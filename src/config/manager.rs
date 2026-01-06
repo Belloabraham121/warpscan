@@ -3,6 +3,7 @@
 //! This module provides functionality for loading, saving, and validating
 //! application configuration.
 
+use super::node_detection;
 use super::types::{CacheConfig, Config, GasConfig, NetworkConfig, UiConfig};
 use crate::error::{Error, Result};
 use dotenvy::dotenv;
@@ -71,6 +72,61 @@ impl Config {
             default_config.save()?;
             Ok(default_config)
         }
+    }
+
+    /// Load configuration and auto-detect local nodes
+    pub async fn load_with_auto_detect() -> Result<Self> {
+        let mut config = Self::load()?;
+
+        // Auto-detect local nodes if current RPC is not local
+        if !node_detection::is_local_url(&config.network.rpc_url) {
+            tracing::info!(
+                target: "warpscan",
+                "Current RPC is not local ({}), attempting auto-detection...",
+                config.network.rpc_url
+            );
+
+            match node_detection::detect_local_node().await {
+                Ok(Some(detected)) => {
+                    // Update config with detected node
+                    config.network.rpc_url = detected.rpc_url.clone();
+                    config.network.chain_id = detected.chain_id;
+                    config.network.name = detected.network_name.clone();
+                    config.network.node_type = Some(detected.node_type.clone());
+
+                    tracing::info!(
+                        target: "warpscan",
+                        "Auto-detected local node: {} at {} (Chain ID: {})",
+                        detected.node_type,
+                        detected.rpc_url,
+                        detected.chain_id
+                    );
+                }
+                Ok(None) => {
+                    tracing::warn!(
+                        target: "warpscan",
+                        "No local node detected, using configured RPC: {}",
+                        config.network.rpc_url
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        target: "warpscan",
+                        "Error during local node detection: {}. Using configured RPC: {}",
+                        e,
+                        config.network.rpc_url
+                    );
+                }
+            }
+        } else {
+            tracing::info!(
+                target: "warpscan",
+                "Already using local RPC: {}",
+                config.network.rpc_url
+            );
+        }
+
+        Ok(config)
     }
 
     /// Save configuration to file

@@ -7,6 +7,7 @@ pub mod input;
 pub mod mouse;
 pub mod navigation;
 pub mod state;
+pub mod subscriptions;
 pub mod ui_state;
 pub mod validation;
 

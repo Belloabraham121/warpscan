@@ -4,13 +4,14 @@ use super::etherscan::{
     EtherscanChain, EtherscanClient, InternalTransaction as EtherscanInternalTransaction,
     TokenBalance as EtherscanTokenBalance, TokenTransfer as EtherscanTokenTransfer,
 };
+use super::subscriptions::{SubscriptionEvent, SubscriptionManager};
 use super::types::AddressTx;
 use super::types::GasPrices;
 use crate::cache::{AddressInfo, CacheManager};
 use crate::config::Config;
 use crate::error::{Error, Result};
 use ethers::{
-    providers::{Http, Middleware, Provider},
+    providers::{Http, Middleware, Provider, Ws},
     types::{
         transaction::eip2718::TypedTransaction, Address, Block, Transaction, TransactionReceipt,
         TransactionRequest, H256, U256,
@@ -22,9 +23,12 @@ use std::sync::Arc;
 /// Blockchain service for interacting with Ethereum
 pub struct BlockchainService {
     provider: Arc<Provider<Http>>,
+    ws_provider: Option<Arc<Provider<Ws>>>,
     cache: Arc<CacheManager>,
     config: Config,
     etherscan: Option<EtherscanClient>,
+    subscription_manager: Option<Arc<tokio::sync::Mutex<SubscriptionManager>>>,
+    subscription_receiver: Option<tokio::sync::mpsc::UnboundedReceiver<SubscriptionEvent>>,
 }
 
 impl BlockchainService {
@@ -60,18 +64,69 @@ impl BlockchainService {
             EtherscanClient::new(key, chain)
         });
 
+        // Try to create WebSocket provider from HTTP URL
+        let ws_provider = Self::create_ws_provider(&config.network.rpc_url).await;
+
+        // Initialize subscription manager
+        let (subscription_manager, subscription_receiver) = SubscriptionManager::new(
+            ws_provider.clone(),
+            provider.clone(),
+        );
+
         Ok(Self {
             provider,
+            ws_provider,
             cache,
             config,
             etherscan,
+            subscription_manager: Some(Arc::new(tokio::sync::Mutex::new(subscription_manager))),
+            subscription_receiver: Some(subscription_receiver),
         })
+    }
+
+    /// Get subscription event receiver
+    pub fn subscription_receiver(&mut self) -> Option<tokio::sync::mpsc::UnboundedReceiver<SubscriptionEvent>> {
+        self.subscription_receiver.take()
+    }
+
+    /// Create WebSocket provider from HTTP URL
+    async fn create_ws_provider(rpc_url: &str) -> Option<Arc<Provider<Ws>>> {
+        // Convert HTTP URL to WebSocket URL
+        let ws_url = rpc_url
+            .replace("http://", "ws://")
+            .replace("https://", "wss://");
+
+        match Provider::<Ws>::connect(&ws_url).await {
+            Ok(provider) => {
+                tracing::info!(
+                    target: "warpscan",
+                    "WebSocket provider connected at {}",
+                    ws_url
+                );
+                Some(Arc::new(provider))
+            }
+            Err(e) => {
+                tracing::warn!(
+                    target: "warpscan",
+                    "Failed to connect WebSocket provider at {}: {}. Will use HTTP polling fallback.",
+                    ws_url,
+                    e
+                );
+                None
+            }
+        }
+    }
+
+    /// Get subscription manager
+    pub fn subscription_manager(&self) -> Option<Arc<tokio::sync::Mutex<SubscriptionManager>>> {
+        self.subscription_manager.clone()
     }
 
     /// Switch provider to use local Anvil/Hardhat node directly
     /// This is called when user selects "Local Node" mode
     pub async fn switch_to_local_node(&mut self) -> Result<()> {
         let local_rpc = "http://127.0.0.1:8545";
+        let local_ws = "ws://127.0.0.1:8545";
 
         tracing::info!(
             target: "warpscan",
@@ -79,12 +134,41 @@ impl BlockchainService {
             local_rpc
         );
 
-        // Create new provider with local RPC
+        // Create new HTTP provider with local RPC
         let provider = Provider::<Http>::try_from(local_rpc)
             .map_err(|e| Error::network(format!("Failed to create local provider: {}", e)))?;
 
-        // Update provider
+        // Try to create WebSocket provider
+        let ws_provider = match Provider::<Ws>::connect(local_ws).await {
+            Ok(ws) => {
+                tracing::info!(
+                    target: "warpscan",
+                    "WebSocket connected to local node at {}",
+                    local_ws
+                );
+                Some(Arc::new(ws))
+            }
+            Err(e) => {
+                tracing::warn!(
+                    target: "warpscan",
+                    "Failed to connect WebSocket to local node: {}. Will use HTTP polling.",
+                    e
+                );
+                None
+            }
+        };
+
+        // Update providers
         self.provider = Arc::new(provider);
+        self.ws_provider = ws_provider.clone();
+
+        // Update subscription manager with new providers
+        let (subscription_manager, subscription_receiver) = SubscriptionManager::new(
+            ws_provider,
+            self.provider.clone(),
+        );
+        self.subscription_manager = Some(Arc::new(tokio::sync::Mutex::new(subscription_manager)));
+        self.subscription_receiver = Some(subscription_receiver);
 
         // Update config to reflect local node
         self.config.network.rpc_url = local_rpc.to_string();

@@ -17,7 +17,7 @@ pub async fn handle_mouse_event(app: &mut App, mouse_event: MouseEvent) -> Resul
             match app.state {
                 AppState::Home => {
                     // Handle clicks on home screen menu items
-                    handle_home_click(app, x, y);
+                    handle_home_click(app, x, y).await;
                 }
                 AppState::AddressLookup => {
                     // Handle clicks on address lookup screen (tabs, transactions, addresses)
@@ -50,26 +50,26 @@ pub async fn handle_mouse_event(app: &mut App, mouse_event: MouseEvent) -> Resul
 }
 
 /// Handle clicks on the home screen
-fn handle_home_click(app: &mut App, _x: u16, y: u16) {
+async fn handle_home_click(app: &mut App, _x: u16, y: u16) {
     // Calculate which menu item was clicked based on position
     // This is a simplified implementation - in a real app you'd calculate based on actual layout
     if (5..=18).contains(&y) {
         // Assuming menu items are in this range
         let item_index = y.saturating_sub(5) as usize;
         match item_index {
-            0 => app.navigate_to(AppState::BlockExplorer),
-            1 => app.navigate_to(AppState::TransactionViewer),
-            2 => app.navigate_to(AppState::AddressLookup),
-            3 => app.navigate_to(AppState::ContractSearch),
-            4 => app.navigate_to(AppState::TokenInfo),
-            5 => app.navigate_to(AppState::GasTracker),
-            6 => app.navigate_to(AppState::ContractInteraction),
-            7 => app.navigate_to(AppState::ContractVerification),
-            8 => app.navigate_to(AppState::WalletManager),
-            9 => app.navigate_to(AppState::MultisigWallet),
-            10 => app.navigate_to(AppState::EventMonitor),
-            11 => app.navigate_to(AppState::Settings),
-            12 => app.navigate_to(AppState::Help),
+            0 => app.navigate_to(AppState::BlockExplorer).await,
+            1 => app.navigate_to(AppState::TransactionViewer).await,
+            2 => app.navigate_to(AppState::AddressLookup).await,
+            3 => app.navigate_to(AppState::ContractSearch).await,
+            4 => app.navigate_to(AppState::TokenInfo).await,
+            5 => app.navigate_to(AppState::GasTracker).await,
+            6 => app.navigate_to(AppState::ContractInteraction).await,
+            7 => app.navigate_to(AppState::ContractVerification).await,
+            8 => app.navigate_to(AppState::WalletManager).await,
+            9 => app.navigate_to(AppState::MultisigWallet).await,
+            10 => app.navigate_to(AppState::EventMonitor).await,
+            11 => app.navigate_to(AppState::Settings).await,
+            12 => app.navigate_to(AppState::Help).await,
             _ => {}
         }
     }

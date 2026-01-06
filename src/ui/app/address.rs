@@ -391,6 +391,11 @@ impl App {
 
                 self.address_data = Some(complete_data);
 
+                // Start subscriptions for this address
+                if let Err(e) = self.start_subscriptions().await {
+                    tracing::warn!(target: "warpscan", "Failed to start address subscriptions: {}", e);
+                }
+
                 // Create success message with debug info
                 let debug_info = format!(
                     "Address {} loaded | Type: {:?} | Balance: {:.6} ETH | Tx Count: {}",
@@ -451,7 +456,7 @@ impl App {
 
     /// Navigate to an address (used for clicking on addresses)
     pub async fn navigate_to_address(&mut self, address: &str) {
-        self.navigate_to(crate::ui::app::state::AppState::AddressLookup);
+        self.navigate_to(crate::ui::app::state::AppState::AddressLookup).await;
         self.set_input(address.to_string());
         if let Err(e) = self.lookup_address(address).await {
             self.set_error(format!("Failed to lookup address: {}", e));
@@ -460,7 +465,7 @@ impl App {
 
     /// Navigate to a transaction (used for clicking on transaction hashes)
     pub async fn navigate_to_transaction(&mut self, tx_hash: &str) {
-        self.navigate_to(crate::ui::app::state::AppState::TransactionViewer);
+        self.navigate_to(crate::ui::app::state::AppState::TransactionViewer).await;
         self.set_input(tx_hash.to_string());
         self.input_data_expanded = false; // Reset expansion state
 

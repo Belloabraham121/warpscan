@@ -61,6 +61,11 @@ async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<boo
 
                 // Refresh dashboard after mode selection (now that mode is set)
                 app.refresh_dashboard().await;
+                
+                // Start subscriptions for homepage
+                if let Err(e) = app.start_subscriptions().await {
+                    tracing::warn!(target: "warpscan", "Failed to start subscriptions: {}", e);
+                }
             }
             _ => {}
         }
@@ -75,10 +80,10 @@ async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<boo
                 // If on Home, Escape quits the app
                 return Ok(true);
             } else {
-                app.go_back();
+                app.go_back().await;
             }
         }
-        KeyCode::Char('h') => app.go_back(),
+        KeyCode::Char('h') => app.go_back().await,
         KeyCode::Up => {
             match app.state {
                 AppState::Home => {
@@ -178,7 +183,7 @@ async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<boo
                         app.switch_address_tab(prev);
                     }
                 }
-                _ => app.go_back(),
+                _ => app.go_back().await,
             }
         }
         KeyCode::Enter => {
@@ -187,10 +192,10 @@ async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<boo
                     // For the new dashboard, Enter activates search or navigates to detailed view
                     if app.current_tab == 0 {
                         // In blocks section - navigate to block explorer with selected block
-                        app.navigate_to(AppState::BlockExplorer);
+                        app.navigate_to(AppState::BlockExplorer).await;
                     } else if app.current_tab == 1 {
                         // In transactions section - navigate to transaction viewer with selected tx
-                        app.navigate_to(AppState::TransactionViewer);
+                        app.navigate_to(AppState::TransactionViewer).await;
                     } else {
                         // In search bar - enter editing mode
                         app.input_mode = InputMode::Editing;
@@ -271,11 +276,11 @@ async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<boo
                 app.navigate_to(AppState::TransactionViewer);
             }
         }
-        KeyCode::Char('a') => app.navigate_to(AppState::AddressLookup),
-        KeyCode::Char('g') => app.navigate_to(AppState::GasTracker),
-        KeyCode::Char('w') => app.navigate_to(AppState::WalletManager),
-        KeyCode::Char('c') => app.navigate_to(AppState::Settings),
-        KeyCode::Char('0') => app.navigate_to(AppState::Home),
+        KeyCode::Char('a') => app.navigate_to(AppState::AddressLookup).await,
+        KeyCode::Char('g') => app.navigate_to(AppState::GasTracker).await,
+        KeyCode::Char('w') => app.navigate_to(AppState::WalletManager).await,
+        KeyCode::Char('c') => app.navigate_to(AppState::Settings).await,
+        KeyCode::Char('0') => app.navigate_to(AppState::Home).await,
         KeyCode::Char('i') => {
             // Toggle input data expansion in transaction viewer
             if app.state == AppState::TransactionViewer {
@@ -335,7 +340,7 @@ async fn handle_editing_mode_keys(app: &mut App, key_code: KeyCode) -> Result<bo
                     // On home screen search bar, detect what type of input it is
                     if is_address(&input) {
                         // Navigate to address lookup and search
-                        app.navigate_to(AppState::AddressLookup);
+                        app.navigate_to(AppState::AddressLookup).await;
                         app.set_input(input.clone());
                         if let Err(e) = app.lookup_address(&input).await {
                             app.set_error(format!("Failed to lookup address: {}", e));
@@ -345,7 +350,7 @@ async fn handle_editing_mode_keys(app: &mut App, key_code: KeyCode) -> Result<bo
                         app.navigate_to_transaction(&input).await;
                     } else if is_block_number(&input) {
                         // Navigate to block explorer
-                        app.navigate_to(AppState::BlockExplorer);
+                        app.navigate_to(AppState::BlockExplorer).await;
                         app.set_input(input);
                         // TODO: Implement block lookup
                         app.set_error("Block lookup not yet implemented".to_string());

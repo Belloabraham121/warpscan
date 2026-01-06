@@ -15,8 +15,9 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
+use std::str::FromStr;
 use warpscan::{
-    blockchain::BlockchainService,
+    blockchain::{BlockchainService, SubscriptionEvent},
     cache::CacheManager,
     config::Config,
     error::Result,
@@ -81,6 +82,68 @@ async fn main() -> Result<()> {
 
     // Initialize event handler
     let mut event_handler = EventHandler::new(Duration::from_millis(100));
+
+    // Start subscription event listener task
+    let event_sender = event_handler.sender();
+    if let Some(mut subscription_receiver) = app.blockchain_client.subscription_receiver() {
+        // Spawn background task to forward subscription events to main event loop
+        tokio::spawn(async move {
+            while let Some(event) = subscription_receiver.recv().await {
+                let custom_event = match event {
+                    SubscriptionEvent::NewBlock {
+                        block_number,
+                        block_hash,
+                    } => warpscan::ui::events::CustomEvent::RealTimeUpdate {
+                        data_type: "new_block".to_string(),
+                        data: serde_json::json!({
+                            "block_number": block_number,
+                            "block_hash": format!("{:#x}", block_hash)
+                        }),
+                    },
+                    SubscriptionEvent::NewAddressTransaction {
+                        address,
+                        transaction,
+                        block_number,
+                    } => warpscan::ui::events::CustomEvent::RealTimeUpdate {
+                        data_type: "new_address_transaction".to_string(),
+                        data: serde_json::json!({
+                            "address": address,
+                            "transaction_hash": format!("{:#x}", transaction.hash()),
+                            "block_number": block_number,
+                            "from": format!("{:#x}", transaction.from),
+                            "to": transaction.to.map(|a| format!("{:#x}", a)),
+                            "value": transaction.value.to_string()
+                        }),
+                    },
+                    SubscriptionEvent::PendingTransaction { transaction } => {
+                        warpscan::ui::events::CustomEvent::RealTimeUpdate {
+                            data_type: "pending_transaction".to_string(),
+                            data: serde_json::json!({
+                                "transaction_hash": format!("{:#x}", transaction.hash())
+                            }),
+                        }
+                    }
+                    SubscriptionEvent::NewLog { log } => {
+                        warpscan::ui::events::CustomEvent::RealTimeUpdate {
+                            data_type: "new_log".to_string(),
+                            data: serde_json::json!({
+                                "address": format!("{:#x}", log.address),
+                                "topics": log.topics.iter().map(|t| format!("{:#x}", t)).collect::<Vec<_>>()
+                            }),
+                        }
+                    }
+                    SubscriptionEvent::Error {
+                        subscription_id,
+                        error,
+                    } => warpscan::ui::events::CustomEvent::Error {
+                        operation: format!("subscription_{}", subscription_id),
+                        message: error,
+                    },
+                };
+                let _ = event_sender.send(warpscan::ui::events::Event::Custom(custom_event));
+            }
+        });
+    }
 
     // Main application loop
     let result = run_app(&mut terminal, &mut app, &mut event_handler, &theme_manager).await;
@@ -189,6 +252,55 @@ async fn run_app<B: ratatui::backend::Backend>(
                 AppEvent::Tick => {
                     // Handle periodic updates
                     // Tick placeholder - no async operations needed here
+                }
+                AppEvent::Custom(custom_event) => {
+                    match custom_event {
+                        warpscan::ui::events::CustomEvent::RealTimeUpdate { data_type, data } => {
+                            // Handle real-time updates
+                            match data_type.as_str() {
+                                "new_block" => {
+                                    if app.state == AppState::Home {
+                                        if let (Some(block_number), Some(block_hash_str)) = (
+                                            data.get("block_number").and_then(|v| v.as_u64()),
+                                            data.get("block_hash").and_then(|v| v.as_str()),
+                                        ) {
+                                            if let Ok(block_hash) =
+                                                ethers::types::H256::from_str(block_hash_str)
+                                            {
+                                                app.handle_subscription_event(
+                                                    SubscriptionEvent::NewBlock {
+                                                        block_number,
+                                                        block_hash,
+                                                    },
+                                                )
+                                                .await;
+                                            }
+                                        }
+                                    }
+                                }
+                                "new_address_transaction" => {
+                                    if app.state == AppState::AddressLookup {
+                                        // This will be handled by fetching the transaction
+                                        // For now, just trigger a refresh
+                                        if let Some(address) =
+                                            data.get("address").and_then(|v| v.as_str())
+                                        {
+                                            if let Some(ref address_data) = app.address_data {
+                                                if address_data.details.address.to_lowercase()
+                                                    == address.to_lowercase()
+                                                {
+                                                    // Trigger address data refresh
+                                                    let _ = app.lookup_address(address).await;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
                 }
                 _ => {}
             }

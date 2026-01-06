@@ -461,43 +461,6 @@ We welcome contributions! Here's how you can help:
    - Link related issues
    - Ensure CI passes
 
-### 📝 Code Style
-
-- Follow standard Rust formatting (`cargo fmt`)
-- Use meaningful variable and function names
-- Add documentation for public APIs
-- Write tests for new functionality
-- Keep functions focused and small
-
-## 📊 Development Status
-
-WarpScan is actively developed with the following roadmap:
-
-### ✅ Completed
-
-- [x] Core TUI framework and navigation
-- [x] Basic blockchain integration
-- [x] Address and transaction lookup
-- [x] Wallet management system
-- [x] Configuration management
-- [x] Error handling and logging
-
-### 🚧 In Progress
-
-- [ ] Contract verification system
-- [ ] Advanced search and filtering
-- [ ] Multi-signature wallet support
-- [ ] Gas price prediction
-- [ ] Performance optimizations
-
-### 📋 Planned
-
-- [ ] Plugin system for extensions
-- [ ] Multiple network support
-- [ ] Advanced analytics and charts
-- [ ] Export functionality
-- [ ] API integration for additional data sources
-
 ## 📄 License
 
 This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.

@@ -61,7 +61,7 @@ async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<boo
 
                 // Refresh dashboard after mode selection (now that mode is set)
                 app.refresh_dashboard().await;
-                
+
                 // Start subscriptions for homepage
                 if let Err(e) = app.start_subscriptions().await {
                     tracing::warn!(target: "warpscan", "Failed to start subscriptions: {}", e);
@@ -402,6 +402,3 @@ async fn handle_editing_mode_keys(app: &mut App, key_code: KeyCode) -> Result<bo
     }
     Ok(false)
 }
-
-
-

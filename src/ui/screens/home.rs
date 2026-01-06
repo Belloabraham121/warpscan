@@ -159,7 +159,7 @@ fn render_network_stats(frame: &mut Frame, area: ratatui::layout::Rect, app: &Ap
     // Latest Block with network info
     let network_name = &app.config.network.name;
     let chain_id = app.config.network.chain_id;
-    
+
     let latest_block_block = Block::default()
         .title("🔗 Latest Block")
         .borders(Borders::ALL)
@@ -169,14 +169,14 @@ fn render_network_stats(frame: &mut Frame, area: ratatui::layout::Rect, app: &Ap
                 .fg(ratatui::style::Color::Cyan)
                 .add_modifier(ratatui::style::Modifier::BOLD),
         );
-    
+
     // Show block number and network info
     let block_info_text = if stats.latest_block > 0 {
         format!("#{}\n{}", stats.latest_block, stats.block_time)
     } else {
         "Loading...".to_string()
     };
-    
+
     let latest_block_text = Paragraph::new(block_info_text)
         .style(
             ratatui::style::Style::default()
@@ -186,7 +186,7 @@ fn render_network_stats(frame: &mut Frame, area: ratatui::layout::Rect, app: &Ap
         .block(latest_block_block)
         .alignment(Alignment::Center);
     frame.render_widget(latest_block_text, stats_chunks[2]);
-    
+
     // Add network info below the stats (if space allows)
     let network_info = format!("🌐 {} (Chain {})", network_name, chain_id);
     if stats_chunks[2].height > 4 {

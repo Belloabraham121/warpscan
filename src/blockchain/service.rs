@@ -68,10 +68,8 @@ impl BlockchainService {
         let ws_provider = Self::create_ws_provider(&config.network.rpc_url).await;
 
         // Initialize subscription manager
-        let (subscription_manager, subscription_receiver) = SubscriptionManager::new(
-            ws_provider.clone(),
-            provider.clone(),
-        );
+        let (subscription_manager, subscription_receiver) =
+            SubscriptionManager::new(ws_provider.clone(), provider.clone());
 
         Ok(Self {
             provider,
@@ -85,7 +83,9 @@ impl BlockchainService {
     }
 
     /// Get subscription event receiver
-    pub fn subscription_receiver(&mut self) -> Option<tokio::sync::mpsc::UnboundedReceiver<SubscriptionEvent>> {
+    pub fn subscription_receiver(
+        &mut self,
+    ) -> Option<tokio::sync::mpsc::UnboundedReceiver<SubscriptionEvent>> {
         self.subscription_receiver.take()
     }
 
@@ -163,10 +163,8 @@ impl BlockchainService {
         self.ws_provider = ws_provider.clone();
 
         // Update subscription manager with new providers
-        let (subscription_manager, subscription_receiver) = SubscriptionManager::new(
-            ws_provider,
-            self.provider.clone(),
-        );
+        let (subscription_manager, subscription_receiver) =
+            SubscriptionManager::new(ws_provider, self.provider.clone());
         self.subscription_manager = Some(Arc::new(tokio::sync::Mutex::new(subscription_manager)));
         self.subscription_receiver = Some(subscription_receiver);
 

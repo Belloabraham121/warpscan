@@ -7,7 +7,7 @@ impl App {
         if self.state != new_state {
             // Stop subscriptions for current state
             self.stop_current_subscriptions().await;
-            
+
             self.navigation_history.push(self.state.clone());
             self.previous_state = Some(self.state.clone());
             let state_to_set = new_state.clone();
@@ -49,11 +49,11 @@ impl App {
         if let Some(previous) = self.navigation_history.pop() {
             // Stop subscriptions for current state
             self.stop_current_subscriptions().await;
-            
+
             self.previous_state = Some(self.state.clone());
             self.state = previous;
             self.reset_navigation_state();
-            
+
             // Start subscriptions for the state we're going back to
             if let Err(e) = self.start_subscriptions().await {
                 tracing::warn!(target: "warpscan", "Failed to start subscriptions on go_back: {}", e);

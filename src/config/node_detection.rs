@@ -35,7 +35,7 @@ pub async fn detect_local_node() -> Result<Option<DetectedNode>> {
     // Try each common localhost URL
     for url in LOCALHOST_URLS {
         tracing::debug!(target: "warpscan", "Trying to detect local node at {}...", url);
-        
+
         match test_node(url).await {
             Ok(node) => {
                 tracing::info!(

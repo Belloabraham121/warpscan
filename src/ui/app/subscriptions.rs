@@ -107,7 +107,8 @@ impl App {
                 if self.state == crate::ui::app::state::AppState::AddressLookup {
                     if let Some(ref address_data) = self.address_data {
                         if address_data.details.address.to_lowercase() == address.to_lowercase() {
-                            self.handle_new_address_transaction(transaction, block_number).await;
+                            self.handle_new_address_transaction(transaction, block_number)
+                                .await;
                         }
                     }
                 }
@@ -153,7 +154,10 @@ impl App {
                 let block_num = num.as_u64();
                 let block_info = BlockInfo {
                     number: block_num,
-                    hash: block.hash.map(|h| format!("{:#x}", h)).unwrap_or_else(|| "0x0".to_string()),
+                    hash: block
+                        .hash
+                        .map(|h| format!("{:#x}", h))
+                        .unwrap_or_else(|| "0x0".to_string()),
                     transaction_count: block.transactions.len() as u32,
                     timestamp: block.timestamp.as_u64(),
                     gas_limit: block.gas_limit.as_u64(),
@@ -181,8 +185,7 @@ impl App {
                     .unwrap()
                     .as_secs();
                 let seconds_ago = now.saturating_sub(timestamp);
-                self.dashboard_data.network_stats.block_time =
-                    format!("{} secs ago", seconds_ago);
+                self.dashboard_data.network_stats.block_time = format!("{} secs ago", seconds_ago);
 
                 // Fetch transactions from this block and update latest transactions
                 // This is a simplified version - in production you'd want to be more selective
@@ -224,9 +227,9 @@ impl App {
             let fee = receipt
                 .gas_used
                 .and_then(|g| {
-                    receipt.effective_gas_price.map(|p| {
-                        (g.as_u128() as f64 * p.as_u64() as f64) / 1_000_000_000.0
-                    })
+                    receipt
+                        .effective_gas_price
+                        .map(|p| (g.as_u128() as f64 * p.as_u64() as f64) / 1_000_000_000.0)
                 })
                 .unwrap_or(0.0);
             (status_val, fee)
@@ -242,13 +245,19 @@ impl App {
                 "Transfer".to_string()
             },
             method: if transaction.input.len() >= 4 {
-                format!("0x{}", hex::encode(&transaction.input[..4.min(transaction.input.len())]))
+                format!(
+                    "0x{}",
+                    hex::encode(&transaction.input[..4.min(transaction.input.len())])
+                )
             } else {
                 String::new()
             },
             block: block_number,
             from: format!("{:#x}", transaction.from),
-            to: transaction.to.map(|a| format!("{:#x}", a)).unwrap_or_default(),
+            to: transaction
+                .to
+                .map(|a| format!("{:#x}", a))
+                .unwrap_or_default(),
             value: value_eth,
             fee,
             timestamp: std::time::SystemTime::now()
@@ -275,4 +284,3 @@ impl App {
         }
     }
 }
-

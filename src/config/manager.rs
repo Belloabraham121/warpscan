@@ -85,7 +85,7 @@ impl Config {
                 "Current RPC is not local ({}), attempting auto-detection...",
                 config.network.rpc_url
             );
-            
+
             match node_detection::detect_local_node().await {
                 Ok(Some(detected)) => {
                     // Update config with detected node
@@ -93,7 +93,7 @@ impl Config {
                     config.network.chain_id = detected.chain_id;
                     config.network.name = detected.network_name.clone();
                     config.network.node_type = Some(detected.node_type.clone());
-                    
+
                     tracing::info!(
                         target: "warpscan",
                         "Auto-detected local node: {} at {} (Chain ID: {})",

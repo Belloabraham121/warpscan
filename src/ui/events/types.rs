@@ -48,4 +48,10 @@ pub enum CustomEvent {
         data_type: String,
         data: serde_json::Value,
     },
+    /// Address lookup completed
+    AddressLookupCompleted {
+        address: String,
+        success: bool,
+        error: Option<String>,
+    },
 }

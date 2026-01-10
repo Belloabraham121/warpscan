@@ -10,6 +10,7 @@ use crate::blockchain::types::TransactionStatus as ChainTransactionStatus;
 
 impl App {
     /// Lookup address information and populate address_data
+    /// This is the internal implementation - can be called directly or via spawn
     pub async fn lookup_address(&mut self, address: &str) -> crate::error::Result<()> {
         // Set loading state
         self.set_loading("address_search", true);
@@ -42,6 +43,9 @@ impl App {
         };
 
         tracing::info!(target: "warpscan", "use_etherscan={} for address {}", use_etherscan, address);
+
+        // Yield control to allow event loop to process input/events
+        tokio::task::yield_now().await;
 
         // PARALLELIZE: Fetch ALL data concurrently
         // get_address_info, transactions, token transfers, token balances, internal transactions,
@@ -82,6 +86,9 @@ impl App {
             self.blockchain_client
                 .get_internal_transactions_with_mode(address, use_etherscan),
         );
+
+        // Yield again after data fetching to allow UI updates
+        tokio::task::yield_now().await;
 
         // Process address info result
         match address_info_result {
@@ -222,11 +229,33 @@ impl App {
                 };
 
                 // Process transactions
-                let txs: Vec<ServiceAddressTx> = txs_result.unwrap_or_default();
+                let txs: Vec<ServiceAddressTx> = match &txs_result {
+                    Ok(txs) => {
+                        tracing::info!(
+                            target: "warpscan",
+                            "✅ Successfully fetched {} transactions for address: {}",
+                            txs.len(),
+                            address
+                        );
+                        txs.clone()
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            target: "warpscan",
+                            "❌ Failed to fetch transactions for address {}: {}",
+                            address,
+                            e
+                        );
+                        vec![]
+                    }
+                };
 
                 // OPTIMIZE: Pre-compute address lowercase once to avoid repeated conversions
                 let address_lower = address.to_lowercase();
                 let now = chrono::Utc::now().timestamp() as u64;
+
+                // Yield periodically during processing to keep UI responsive
+                tokio::task::yield_now().await;
 
                 // OPTIMIZE: Pre-allocate vectors with known capacity
                 let txs_len = txs.len();
@@ -234,7 +263,11 @@ impl App {
                 let mut account_history = Vec::with_capacity(txs_len);
 
                 // OPTIMIZE: Process in single pass to avoid multiple iterations
-                for t in &txs {
+                // Yield every 10 transactions to keep UI responsive
+                for (idx, t) in txs.iter().enumerate() {
+                    if idx % 10 == 0 {
+                        tokio::task::yield_now().await;
+                    }
                     // Map to UI transaction model
                     let tx_type = if t.method.is_empty() {
                         "Transfer"
@@ -302,6 +335,9 @@ impl App {
                         tx_hash: t.tx_hash.clone(),
                     });
                 }
+
+                // Yield before processing token data
+                tokio::task::yield_now().await;
 
                 // OPTIMIZE: Process token transfers with pre-allocated capacity
                 let token_transfers: Vec<TokenTransfer> = match token_transfers_result {

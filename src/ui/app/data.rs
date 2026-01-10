@@ -99,6 +99,9 @@ impl App {
             tracing::warn!(target: "warpscan", "Failed to fetch block number: {}", e);
         }
 
+        // Yield before starting block fetching to keep UI responsive
+        tokio::task::yield_now().await;
+
         // Fetch latest blocks and collect transaction hashes
         let mut all_tx_hashes = Vec::new();
         match self.blockchain_client.get_latest_block().await {
@@ -109,6 +112,10 @@ impl App {
 
                     // Fetch last 5 blocks
                     for i in 0..5 {
+                        // Yield every block fetch to keep UI responsive
+                        if i > 0 {
+                            tokio::task::yield_now().await;
+                        }
                         match self
                             .blockchain_client
                             .get_block_by_number(start_block.saturating_sub(i))
@@ -173,18 +180,25 @@ impl App {
         all_tx_hashes.sort_by(|a, b| b.1.cmp(&a.1));
         all_tx_hashes.truncate(5);
 
+        // Yield before fetching transactions
+        tokio::task::yield_now().await;
+
         let mut transactions = Vec::new();
-        for (tx_hash_str, block_num, block_timestamp) in all_tx_hashes {
+        for (idx, (tx_hash_str, block_num, block_timestamp)) in all_tx_hashes.iter().enumerate() {
+            // Yield every transaction fetch to keep UI responsive
+            if idx > 0 {
+                tokio::task::yield_now().await;
+            }
             // Fetch transaction details
             if let Ok(Some(tx)) = self
                 .blockchain_client
-                .get_transaction_by_hash(&tx_hash_str)
+                .get_transaction_by_hash(tx_hash_str)
                 .await
             {
                 // Fetch transaction receipt for gas_used and status
                 let receipt_result = self
                     .blockchain_client
-                    .get_transaction_receipt(&tx_hash_str)
+                    .get_transaction_receipt(tx_hash_str)
                     .await;
 
                 let (gas_used, status, gas_price_gwei) = if let Ok(Some(receipt)) = receipt_result {
@@ -230,8 +244,8 @@ impl App {
                     gas_price: gas_price_gwei,
                     gas_used,
                     status,
-                    timestamp: block_timestamp,
-                    block_number: block_num,
+                    timestamp: *block_timestamp,
+                    block_number: *block_num,
                     transaction_fee: tx_fee_eth,
                 };
 

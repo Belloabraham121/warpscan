@@ -59,10 +59,26 @@ async fn handle_normal_mode_keys(app: &mut App, key_code: KeyCode) -> Result<boo
                 app.state = AppState::Home;
                 app.current_tab = 0; // Reset tab for home screen
 
-                // Refresh dashboard after mode selection (now that mode is set)
-                app.refresh_dashboard().await;
+                // Set loading state immediately
+                app.set_loading("dashboard_refresh", true);
 
-                // Start subscriptions for homepage
+                // Spawn dashboard refresh in background using a channel pattern
+                // We'll use the event system to trigger it asynchronously
+                let event_sender = app.event_sender.clone();
+                if let Some(sender) = event_sender {
+                    // Send event to trigger refresh in next tick
+                    use crate::ui::events::{CustomEvent, Event};
+                    let _ = sender.send(Event::Custom(CustomEvent::DataLoaded {
+                        operation: "dashboard_refresh_requested".to_string(),
+                        data: serde_json::json!({}),
+                    }));
+                } else {
+                    // Fallback: trigger refresh directly but it will block
+                    // The yields inside will help somewhat
+                    app.pending_dashboard_refresh = true;
+                }
+
+                // Start subscriptions for homepage (non-blocking, quick operation)
                 if let Err(e) = app.start_subscriptions().await {
                     tracing::warn!(target: "warpscan", "Failed to start subscriptions: {}", e);
                 }
@@ -329,6 +345,7 @@ async fn handle_editing_mode_keys(app: &mut App, key_code: KeyCode) -> Result<bo
                 AppState::AddressLookup => {
                     // On address lookup screen, search for the address
                     if is_address(&input) {
+                        // Call lookup_address - it now yields periodically to keep UI responsive
                         if let Err(e) = app.lookup_address(&input).await {
                             app.set_error(format!("Failed to lookup address: {}", e));
                         }

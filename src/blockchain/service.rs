@@ -491,6 +491,12 @@ impl BlockchainService {
         if let Some(ref client) = self.etherscan {
             match client.get_address_transactions(address).await {
                 Ok(txs) => {
+                    tracing::info!(
+                        target: "warpscan",
+                        "✅ Etherscan returned {} transactions for address: {}",
+                        txs.len(),
+                        address
+                    );
                     // Store in cache for future use
                     self.cache
                         .store_address_transactions(address.to_string(), txs.clone());
@@ -498,9 +504,10 @@ impl BlockchainService {
                     return Ok(txs);
                 }
                 Err(err) => {
-                    tracing::warn!(
+                    tracing::error!(
                         target = "warpscan",
-                        "Etherscan failed for txlist: {}. Returning empty list.",
+                        "❌ Etherscan failed for txlist (address={}): {}. Returning empty list.",
+                        address,
                         err
                     );
                     return Ok(vec![]);
@@ -517,6 +524,12 @@ impl BlockchainService {
         address: &str,
         use_etherscan: bool,
     ) -> Result<Vec<AddressTx>> {
+        tracing::info!(
+            target: "warpscan",
+            "🔍 get_address_transactions_with_mode: address={}, use_etherscan={}",
+            address,
+            use_etherscan
+        );
         if use_etherscan {
             self.get_address_transactions(address).await
         } else {

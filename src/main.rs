@@ -268,7 +268,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                 },
                 AppEvent::Tick => {
                     // Handle periodic updates
-                    // Tick placeholder - no async operations needed here
+                    // Dashboard refresh is handled via event system (DataLoaded event)
                 }
                 AppEvent::Custom(warpscan::ui::events::CustomEvent::RealTimeUpdate {
                     data_type,
@@ -335,6 +335,30 @@ async fn run_app<B: ratatui::backend::Backend>(
                         }
                         _ => {}
                     }
+                }
+                AppEvent::Custom(warpscan::ui::events::CustomEvent::AddressLookupCompleted {
+                    address,
+                    success,
+                    error,
+                }) => {
+                    // Handle address lookup completion from background task
+                    // (Currently not used, but ready for future background task implementation)
+                    if success {
+                        tracing::info!(target: "warpscan", "✅ Address lookup completed for: {}", address);
+                    } else if let Some(err) = error {
+                        tracing::error!(target: "warpscan", "❌ Address lookup failed for {}: {}", address, err);
+                        app.set_error(format!("Address lookup failed: {}", err));
+                        app.set_loading("address_search", false);
+                    }
+                }
+                AppEvent::Custom(warpscan::ui::events::CustomEvent::DataLoaded {
+                    operation,
+                    ..
+                }) if operation == "dashboard_refresh_requested" => {
+                    // Trigger dashboard refresh
+                    // This happens after UI has updated, so it's less blocking
+                    // The yields inside refresh_dashboard help keep it somewhat responsive
+                    app.refresh_dashboard().await;
                 }
                 AppEvent::Custom(_) => {}
                 _ => {}

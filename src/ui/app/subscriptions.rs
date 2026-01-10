@@ -8,6 +8,9 @@ use hex;
 impl App {
     /// Start subscriptions based on current state
     pub async fn start_subscriptions(&mut self) -> Result<()> {
+        // Yield to allow UI to update before starting subscriptions
+        tokio::task::yield_now().await;
+
         let subscription_manager = match self.blockchain_client.subscription_manager() {
             Some(manager) => manager,
             None => {

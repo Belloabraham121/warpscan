@@ -180,14 +180,58 @@ impl EtherscanClient {
             .text()
             .await
             .map_err(|e| Error::network(format!("Etherscan response read failed: {}", e)))?;
-        let json: serde_json::Value = serde_json::from_str(&text).map_err(Error::serialization)?;
+        let json: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+            Error::parse(format!(
+                "Failed to parse Etherscan JSON: {} | Response: {}",
+                e, text
+            ))
+        })?;
+
+        // Check for API-level errors first
+        if let Some(status) = json.get("status") {
+            if let Some(status_str) = status.as_str() {
+                if status_str != "1" {
+                    let message = json
+                        .get("message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("Unknown error");
+                    let result_msg = json.get("result").and_then(|r| r.as_str()).unwrap_or("");
+                    return Err(Error::network(format!(
+                        "Etherscan API error (status={}): {} | result: {}",
+                        status_str, message, result_msg
+                    )));
+                }
+            }
+        }
 
         let result = json
             .get("result")
             .ok_or_else(|| Error::parse("Missing result field from Etherscan response"))?;
-        let arr = result
-            .as_array()
-            .ok_or_else(|| Error::parse("Unexpected result type for txlist"))?;
+
+        // Handle case where result is an error string instead of array
+        if let Some(error_msg) = result.as_str() {
+            if error_msg.is_empty() || error_msg == "No transactions found" {
+                // This is fine, just return empty list
+                tracing::info!(
+                    target: "warpscan",
+                    "Etherscan returned no transactions for address: {}",
+                    address
+                );
+                return Ok(vec![]);
+            }
+            // Otherwise it's an actual error message
+            return Err(Error::network(format!(
+                "Etherscan returned error message: {}",
+                error_msg
+            )));
+        }
+
+        let arr = result.as_array().ok_or_else(|| {
+            Error::parse(format!(
+                "Unexpected result type for txlist: expected array, got {:?} | Full response: {}",
+                result, text
+            ))
+        })?;
 
         let txs: Vec<AddressTx> = arr
             .iter()
@@ -297,14 +341,58 @@ impl EtherscanClient {
             .text()
             .await
             .map_err(|e| Error::network(format!("Etherscan response read failed: {}", e)))?;
-        let json: serde_json::Value = serde_json::from_str(&text).map_err(Error::serialization)?;
+        let json: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+            Error::parse(format!(
+                "Failed to parse Etherscan JSON: {} | Response: {}",
+                e, text
+            ))
+        })?;
+
+        // Check for API-level errors first
+        if let Some(status) = json.get("status") {
+            if let Some(status_str) = status.as_str() {
+                if status_str != "1" {
+                    let message = json
+                        .get("message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("Unknown error");
+                    let result_msg = json.get("result").and_then(|r| r.as_str()).unwrap_or("");
+                    return Err(Error::network(format!(
+                        "Etherscan API error (status={}): {} | result: {}",
+                        status_str, message, result_msg
+                    )));
+                }
+            }
+        }
 
         let result = json
             .get("result")
             .ok_or_else(|| Error::parse("Missing result field from Etherscan response"))?;
-        let arr = result
-            .as_array()
-            .ok_or_else(|| Error::parse("Unexpected result type for tokentx"))?;
+
+        // Handle case where result is an error string instead of array
+        if let Some(error_msg) = result.as_str() {
+            if error_msg.is_empty() || error_msg == "No transfers found" {
+                // This is fine, just return empty list
+                tracing::info!(
+                    target: "warpscan",
+                    "Etherscan returned no token transfers for address: {}",
+                    address
+                );
+                return Ok(vec![]);
+            }
+            // Otherwise it's an actual error message
+            return Err(Error::network(format!(
+                "Etherscan returned error message: {}",
+                error_msg
+            )));
+        }
+
+        let arr = result.as_array().ok_or_else(|| {
+            Error::parse(format!(
+                "Unexpected result type for tokentx: expected array, got {:?} | Full response: {}",
+                result, text
+            ))
+        })?;
 
         let transfers: Vec<TokenTransfer> = arr
             .iter()
@@ -402,14 +490,60 @@ impl EtherscanClient {
             .text()
             .await
             .map_err(|e| Error::network(format!("Etherscan response read failed: {}", e)))?;
-        let json: serde_json::Value = serde_json::from_str(&text).map_err(Error::serialization)?;
+        let json: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+            Error::parse(format!(
+                "Failed to parse Etherscan JSON: {} | Response: {}",
+                e, text
+            ))
+        })?;
+
+        // Check for API-level errors first
+        if let Some(status) = json.get("status") {
+            if let Some(status_str) = status.as_str() {
+                if status_str != "1" {
+                    let message = json
+                        .get("message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("Unknown error");
+                    let result_msg = json.get("result").and_then(|r| r.as_str()).unwrap_or("");
+                    return Err(Error::network(format!(
+                        "Etherscan API error (status={}): {} | result: {}",
+                        status_str, message, result_msg
+                    )));
+                }
+            }
+        }
 
         let result = json
             .get("result")
             .ok_or_else(|| Error::parse("Missing result field from Etherscan response"))?;
+
+        // Handle case where result is an error string instead of array
+        if let Some(error_msg) = result.as_str() {
+            if error_msg.is_empty() || error_msg == "No internal transactions found" {
+                // This is fine, just return empty list
+                tracing::info!(
+                    target: "warpscan",
+                    "Etherscan returned no internal transactions for address: {}",
+                    address
+                );
+                return Ok(vec![]);
+            }
+            // Otherwise it's an actual error message
+            return Err(Error::network(format!(
+                "Etherscan returned error message: {}",
+                error_msg
+            )));
+        }
+
         let arr = result
             .as_array()
-            .ok_or_else(|| Error::parse("Unexpected result type for txlistinternal"))?;
+            .ok_or_else(|| {
+                Error::parse(format!(
+                    "Unexpected result type for txlistinternal: expected array, got {:?} | Full response: {}",
+                    result, text
+                ))
+            })?;
 
         let internal_txns: Vec<InternalTransaction> = arr
             .iter()

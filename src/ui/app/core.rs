@@ -61,6 +61,10 @@ pub struct App {
     pub data_mode: Option<DataMode>,
     /// Mode selection state
     pub mode_selection_state: ModeSelectionState,
+    /// Pending address lookup (address being looked up in background)
+    pub pending_address_lookup: Option<String>,
+    /// Flag to trigger dashboard refresh in background
+    pub pending_dashboard_refresh: bool,
 }
 
 impl App {
@@ -97,6 +101,8 @@ impl App {
             input_data_expanded: false,
             data_mode: None,
             mode_selection_state: ModeSelectionState::Selecting,
+            pending_address_lookup: None,
+            pending_dashboard_refresh: false,
         }
     }
 
